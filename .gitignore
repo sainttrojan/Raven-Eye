@@ -1,0 +1,8 @@
+﻿.venv/
+uv_extracted/
+__pycache__/
+*.pyc
+.env
+fb_cookies.json
+*.xlsx
+*.csv
