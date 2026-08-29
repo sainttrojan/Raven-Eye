@@ -43,7 +43,7 @@ Raven Eye is built using Python. Below are the steps to deploy and run the syste
 
 ### 1. Clone the Repository
 `ash
-git clone https://github.com/your-username/Raven-Eye.git
+git clone https://github.com/sainttrojan/Raven-Eye.git
 cd Raven-Eye
 `
 
