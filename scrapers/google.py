@@ -12,6 +12,17 @@ class GoogleScraper(BaseScraper):
         self.current_key_idx = 0
         super().__init__(None)
 
+
+    def resolve_google_url(self, url: str) -> str:
+        if 'google.com/goto?url=' in url or 'google.com/url?q=' in url:
+            try:
+                resp = requests.get(url, allow_redirects=False, timeout=10)
+                if resp.status_code in [301, 302]:
+                    return resp.headers.get('Location', url)
+            except Exception:
+                pass
+        return url
+
     def is_valid_listing(self, url: str) -> bool:
         """Filters out category and search pages to ensure we get individual listings."""
         url_lower = url.lower()
@@ -77,7 +88,7 @@ class GoogleScraper(BaseScraper):
                     
                     print(f"Fetching page {page + 1} using API Key ending in ...{current_api_key[-4:] if current_api_key else ''}")
                     try:
-                        response = requests.get(api_url, timeout=30)
+                        response = requests.get(api_url, timeout=60)
                         if response.status_code == 200:
                             success = True
                             data = response.json()
