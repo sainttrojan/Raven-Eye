@@ -3,6 +3,7 @@ import asyncio
 import pandas as pd
 from scrapers.google import GoogleScraper
 from core.db import DatabaseManager
+from core.config import load_api_keys, save_api_keys
 
 st.set_page_config(page_title="Raven Eye System", page_icon="🏢", layout="wide")
 
@@ -36,16 +37,28 @@ st.markdown("""
 
 # Initialize Database
 db = DatabaseManager()
+if "api_keys" not in st.session_state:
+    st.session_state["api_keys"] = load_api_keys()
 
-# Sidebar for History
-with st.sidebar:
-    st.header("🗄️ سجل العقارات")
-    if st.button("عرض كل العقارات المحفوظة", use_container_width=True):
-        st.session_state['show_history'] = True
-    if st.button("بحث جديد", use_container_width=True):
-        st.session_state['show_history'] = False
+# Default API Key in session state
+if 'scraper_api_key' not in st.session_state:
+    st.session_state['scraper_api_key'] = "06ede5861ed79f12ad4ed6f275ce0038"
 
-if st.session_state.get('show_history', False):
+tab1, tab2, tab3 = st.tabs(["البحث المباشر", "العقارات المحفوظة", "الإعدادات"])
+
+with tab3:
+    st.subheader("إعدادات النظام (API Keys)")
+    keys_text = st.text_area("أدخل مفاتيح ScraperAPI (مفتاح واحد في كل سطر):", value="\n".join(st.session_state['api_keys']), height=150)
+    if st.button("حفظ الإعدادات"):
+        new_keys = [k.strip() for k in keys_text.split('\n') if k.strip()]
+        if new_keys:
+            st.session_state['api_keys'] = new_keys
+            save_api_keys(new_keys)
+            st.success("تم تحديث وحفظ مفاتيح الـ API بنجاح!")
+        else:
+            st.error("يجب إدخال مفتاح واحد على الأقل.")
+
+with tab2:
     st.subheader("العقارات المحفوظة مسبقاً")
     history_data = db.get_all_properties()
     if history_data:
@@ -65,7 +78,8 @@ if st.session_state.get('show_history', False):
             )
     else:
         st.info("لا توجد عقارات محفوظة حتى الآن.")
-else:
+
+with tab1:
     query = st.text_input("", placeholder="أدخل كلمات البحث...")
 
     col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1])
@@ -123,8 +137,7 @@ else:
             time_filter = "qdr:m"
 
         async def fetch_results():
-            scraper_api_key = "06ede5861ed79f12ad4ed6f275ce0038"
-            google_scraper = GoogleScraper(scraper_api_key)
+            google_scraper = GoogleScraper(st.session_state['api_keys'])
             return await google_scraper.search(final_query, time_filter, max_pages=max_pages)
             
         with st.spinner(f"جاري سحب البيانات من {max_pages} صفحات... برجاء الانتظار"):

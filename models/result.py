@@ -11,6 +11,8 @@ class SearchResult:
     location: Optional[str] = None
     phone_number: Optional[str] = None
     area: Optional[str] = None
+    broker_type: Optional[str] = None
+    images: Optional[str] = None
 
     def to_dict(self):
         return {
@@ -21,5 +23,7 @@ class SearchResult:
             'Phone Number': self.phone_number,
             'Location': self.location,
             'URL': self.url,
-            'Description': self.description
+            'Description': self.description,
+            'Broker Type': self.broker_type,
+            'Images': self.images
         }

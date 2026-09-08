@@ -6,3 +6,5 @@ __pycache__/
 fb_cookies.json
 *.xlsx
 *.csv
+config.json
+*.db

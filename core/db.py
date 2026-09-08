@@ -23,6 +23,8 @@ class DatabaseManager:
                     phone_number TEXT,
                     location TEXT,
                     description TEXT,
+                    broker_type TEXT,
+                    images TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
@@ -37,8 +39,8 @@ class DatabaseManager:
             cursor = conn.cursor()
             try:
                 cursor.execute("""
-                    INSERT INTO properties (source, title, url, price, area, phone_number, location, description)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO properties (source, title, url, price, area, phone_number, location, description, broker_type, images)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     property_data.get('Source'),
                     property_data.get('Title'),
@@ -47,7 +49,9 @@ class DatabaseManager:
                     property_data.get('Area'),
                     property_data.get('Phone Number'),
                     property_data.get('Location'),
-                    property_data.get('Description')
+                    property_data.get('Description'),
+                    property_data.get('Broker Type'),
+                    property_data.get('Images')
                 ))
                 conn.commit()
                 return True
@@ -76,6 +80,8 @@ class DatabaseManager:
                     'Phone Number': row['phone_number'],
                     'Location': row['location'],
                     'Description': row['description'],
+                    'Broker Type': row['broker_type'],
+                    'Images': row['images'],
                     'Added On': row['created_at']
                 })
             return results
