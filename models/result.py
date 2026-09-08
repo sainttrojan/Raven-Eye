@@ -9,12 +9,16 @@ class SearchResult:
     price: Optional[str] = None
     description: Optional[str] = None
     location: Optional[str] = None
+    phone_number: Optional[str] = None
+    area: Optional[str] = None
 
     def to_dict(self):
         return {
             'Source': self.source,
             'Title': self.title,
             'Price': self.price,
+            'Area': self.area,
+            'Phone Number': self.phone_number,
             'Location': self.location,
             'URL': self.url,
             'Description': self.description
