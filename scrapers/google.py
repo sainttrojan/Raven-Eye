@@ -7,7 +7,7 @@ from core.parser import SmartParser
 import re
 
 class GoogleScraper(BaseScraper):
-        def __init__(self, api_keys: List[str]):
+    def __init__(self, api_keys: List[str]):
         self.api_keys = api_keys if isinstance(api_keys, list) else [api_keys]
         self.current_key_idx = 0
         super().__init__(None)
