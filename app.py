@@ -107,7 +107,7 @@ with tab1:
     with col4:
         st.write("")
         st.write("")
-        max_pages = st.number_input("عدد الصفحات (1-10)", min_value=1, max_value=10, value=5)
+        max_pages = st.number_input("عدد الصفحات", min_value=1, max_value=200, value=5)
 
     search_clicked = st.button("بحث", use_container_width=True)
 
