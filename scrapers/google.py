@@ -35,11 +35,24 @@ class GoogleScraper(BaseScraper):
                 
         return url
 
+    def is_category_title(self, title: str) -> bool:
+        if not title: return False
+        t = title.lower()
+        # Branding suffixes usually present on category pages
+        if '| دوبيزل' in t or '| dubizzle' in t or '(olx)' in t: return True
+        if '- property finder' in t or '| property finder' in t: return True
+        if '- aqarmap' in t or '| aqarmap' in t: return True
+        
+        # Generic SEO titles
+        if t.startswith('شقق للبيع في') or t.startswith('شقق للإيجار في'): return True
+        if t.startswith('apartments for') or t.startswith('properties for'): return True
+        if t.startswith('villas for') or t.startswith('عقارات'): return True
+        if t == 'شقق للبيع في مدينتي من المالك': return True
+        return False
+
     def is_valid_listing(self, url: str) -> bool:
         """Filters out category and search pages to ensure we get individual listings."""
         url_lower = url.lower()
-        if 'google.com/goto' in url_lower or 'google.com/url' in url_lower:
-            return False
         
         # 1. Global Exclusions (Any site)
         invalid_patterns = [
@@ -132,8 +145,11 @@ class GoogleScraper(BaseScraper):
                         snippet = item.get('snippet')
                         
                         if title and link:
-                            if not self.is_valid_listing(link):
+                            if self.is_category_title(title):
                                 continue
+                            if 'google.com/goto' not in link and 'google.com/url' not in link:
+                                if not self.is_valid_listing(link):
+                                    continue
                                 
                             full_text = f"{title} {snippet}"
                             parsed_data = SmartParser.parse_text(full_text)
