@@ -38,6 +38,8 @@ class GoogleScraper(BaseScraper):
     def is_valid_listing(self, url: str) -> bool:
         """Filters out category and search pages to ensure we get individual listings."""
         url_lower = url.lower()
+        if 'google.com/goto' in url_lower or 'google.com/url' in url_lower:
+            return False
         
         # 1. Global Exclusions (Any site)
         invalid_patterns = [
@@ -126,6 +128,7 @@ class GoogleScraper(BaseScraper):
                 for item in organic_results:
                         title = item.get('title')
                         link = item.get('link')
+                        link = self.resolve_google_url(link)
                         snippet = item.get('snippet')
                         
                         if title and link:
