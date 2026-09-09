@@ -2,6 +2,7 @@ import streamlit as st
 import asyncio
 import pandas as pd
 from scrapers.google import GoogleScraper
+from scrapers.dubizzle import DubizzleScraper
 from core.db import DatabaseManager
 from core.config import load_api_keys, save_api_keys
 
@@ -137,8 +138,12 @@ with tab1:
             time_filter = "qdr:m"
 
         async def fetch_results():
-            google_scraper = GoogleScraper(st.session_state['api_keys'])
-            return await google_scraper.search(final_query, time_filter, max_pages=max_pages)
+            if site_option == "Dubizzle فقط":
+                scraper = DubizzleScraper(st.session_state['api_keys'])
+                return await scraper.search(query, time_filter, max_pages=max_pages)
+            else:
+                scraper = GoogleScraper(st.session_state['api_keys'])
+                return await scraper.search(final_query, time_filter, max_pages=max_pages)
             
         with st.spinner(f"جاري سحب البيانات من {max_pages} صفحات... برجاء الانتظار"):
             try:
