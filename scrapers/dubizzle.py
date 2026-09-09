@@ -16,7 +16,7 @@ class DubizzleScraper(BaseScraper):
         results = []
         
         # Remove google dork strings from query
-        clean_query = re.sub(r'site:\S+', '', query).strip()
+        clean_query = re.sub(r'site:\S+', '', query).strip().replace(' ', '-')
         
         for page in range(1, max_pages + 1):
             encoded_query = urllib.parse.quote(clean_query)
@@ -29,7 +29,7 @@ class DubizzleScraper(BaseScraper):
                 
                 print(f"DubizzleScraper: Fetching page {page} using API Key ending in ...{current_api_key[-4:] if current_api_key else ''}")
                 try:
-                    response = requests.get(api_url, timeout=30)
+                    response = requests.get(api_url, timeout=60)
                     if response.status_code == 200:
                         success = True
                         break
@@ -47,26 +47,34 @@ class DubizzleScraper(BaseScraper):
                 print("All API keys failed or max pages reached.")
                 break
                 
-            print(response.status_code, len(response.text)); soup = BeautifulSoup(response.text, 'html.parser')
-            articles = soup.find_all('article')
-            if not articles:
-                print(f"No articles found on page {page}.")
+            soup = BeautifulSoup(response.text, 'html.parser')
+            ad_links = soup.find_all('a', href=lambda href: href and '/ad/' in href)
+            
+            if not ad_links:
+                print(f"No ad links found on page {page}.")
                 break
                 
-            for a in articles:
-                link_tag = a.find('a', href=True)
-                if not link_tag: continue
-                
+            seen_urls = set()
+            
+            for link_tag in ad_links:
                 url = link_tag['href']
                 if not url.startswith('http'):
                     url = "https://www.dubizzle.com.eg" + url
                     
-                title = a.get('aria-label', link_tag.get('title', 'Unknown'))
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                
+                item = link_tag.find_parent('li')
+                if not item:
+                    item = link_tag.find_parent('div')
+                    
+                title = item.get('aria-label', link_tag.get('title', 'Unknown')) if item else 'Unknown'
                 if title == 'Unknown' or not title:
                     title_elem = link_tag.find('div', string=True)
                     if title_elem: title = title_elem.text
                     
-                spans = a.find_all('span')
+                spans = item.find_all('span') if item else link_tag.find_all('span')
                 texts = [s.text.strip() for s in spans if s.text.strip()]
                 
                 price = next((t for t in texts if 'ج.م' in t or 'EGP' in t), None)
