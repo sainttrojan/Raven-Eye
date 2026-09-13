@@ -52,6 +52,15 @@ async def fetch_properties(query, max_pages=1):
     return results
 
 def is_valid_result(r, query):
+    if r.price:
+        import re
+        digits = re.sub(r'[^0-9]', '', str(r.price))
+        if digits:
+            try:
+                if int(digits) <= 12000:
+                    return False
+            except:
+                pass
     return True
 
 def run_radar_iteration(query, target_chat_id=None):
