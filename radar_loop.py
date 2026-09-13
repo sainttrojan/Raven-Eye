@@ -43,6 +43,25 @@ async def fetch_properties(query, max_pages=1):
     results = await scraper.search(query, max_pages=max_pages)
     return results
 
+def is_valid_result(r, query):
+    text = (r.title + " " + r.description).lower()
+    
+    if "مدينتي" in query and "مدينتي" not in text:
+        return False
+        
+    if "مدينتي" in query:
+        bad_cities = ["الشروق", "بدر", "الرحاب", "المستقبل", "التجمع", "العاصمة", "العبور", "هيليوبوليس"]
+        for bc in bad_cities:
+            if bc in text:
+                return False
+                
+    bad_keywords = ["شركة", "بروكر", "عمولة", "تسويق", "وسيط", "مكتب", "سمسار", "عقارات"]
+    for bk in bad_keywords:
+        if bk in text:
+            return False
+            
+    return True
+
 def run_radar_iteration(query, target_chat_id=None):
     print(f"Running radar iteration for: {query}")
     results = asyncio.run(fetch_properties(query, max_pages=1))
@@ -50,7 +69,7 @@ def run_radar_iteration(query, target_chat_id=None):
     new_results = []
     
     for r in results:
-        if r.url not in seen:
+        if r.url not in seen and is_valid_result(r, query):
             new_results.append(r)
             
     if not new_results:
