@@ -126,8 +126,7 @@ def background_radar():
             
             if rem <= 50 and not warning_sent:
                 try:
-                    bot.send_message(ADMIN_CHAT_ID, f"⚠️ <b>تحذير هام:</b>
-رصيدك في ScraperAPI يوشك على النفاذ! المتبقي: <b>{rem}</b> نقطة فقط.", parse_mode="HTML")
+                    bot.send_message(ADMIN_CHAT_ID, f"⚠️ <b>تحذير هام:</b>\nرصيدك في ScraperAPI يوشك على النفاذ! المتبقي: <b>{rem}</b> نقطة فقط.", parse_mode="HTML")
                 except: pass
                 warning_sent = True
             elif rem > 50:
@@ -143,7 +142,6 @@ def background_radar():
             else:
                 print("Skipping radar run because credits are empty.")
         time.sleep(10800) # 3 hours
-
 
 def get_main_keyboard(chat_id):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -169,8 +167,7 @@ def send_welcome(message):
         subs.add(chat_id)
         save_subscribers(subs)
         
-    text = "أهلاً بك في نظام تحكم Raven-Eye 🦅
-استخدم الأزرار بالأسفل للتحكم:"
+    text = "أهلاً بك في نظام تحكم Raven-Eye 🦅\nاستخدم الأزرار بالأسفل للتحكم:"
     bot.send_message(message.chat.id, text, reply_markup=get_main_keyboard(chat_id))
 
 @bot.message_handler(func=lambda message: message.text in ['📊 حالة الرادار', '/status'])
@@ -209,11 +206,7 @@ def credits_btn(message):
         used = data.get('requestCount', 0)
         limit = data.get('requestLimit', 0)
         rem = limit - used
-        text = f"📊 <b>رصيد حساب ScraperAPI</b>
-
-🔹 المستخدم: {used}
-🔹 المتبقي: <b>{rem}</b>
-🔹 الحد الأقصى: {limit}"
+        text = f"📊 <b>رصيد حساب ScraperAPI</b>\n\n🔹 المستخدم: {used}\n🔹 المتبقي: <b>{rem}</b>\n🔹 الحد الأقصى: {limit}"
         bot.reply_to(message, text, parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء جلب الرصيد.")
@@ -235,7 +228,6 @@ def process_search_query(message):
             bot.reply_to(message, "تم الانتهاء بس مفيش شقق جديدة ظهرت.")
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء البحث.")
-
 
 if __name__ == "__main__":
     print("Starting Telegram Bot and Radar...")
