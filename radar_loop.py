@@ -12,8 +12,8 @@ from scrapers.dubizzle import DubizzleScraper
 from core.config import load_api_keys
 
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+TELEGRAM_TOKEN = "8718465204:AAGvGQWwzEcwjSTKLQR4Uk27DYbVPy_V-Ps"
+ADMIN_CHAT_ID = "8291802346"
 
 DEFAULT_QUERIES = ["شقة للبيع في مدينتي من المالك", "شقة للايجار في مدينتي من المالك"]
 

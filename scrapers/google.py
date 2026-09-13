@@ -163,9 +163,7 @@ class GoogleScraper(BaseScraper):
                                 area=parsed_data.get('area'),
                                 phone_number=parsed_data.get('phone_number')
                             ))
-                else:
-                    print(f"ScraperAPI returned status code: {response.status_code}")
-                    break
+
         except Exception as e:
             print(f'Failed to search Google via ScraperAPI: {e}')
             

@@ -100,7 +100,7 @@ class DubizzleScraper(BaseScraper):
         if not all_results:
             print("Dubizzle direct scrape failed (likely Cloudflare block). Falling back to GoogleScraper...")
             fallback_scraper = GoogleScraper(self.api_keys)
-            fallback_query = f"{query} site:dubizzle.com.eg"
+            fallback_query = f"{query} site:dubizzle.com.eg inurl:ad"
             # Force time filter to last 24h if it's empty so we don't get 5 year old properties
             tf = time_filter if time_filter else "qdr:d"
             fallback_results = await fallback_scraper.search(fallback_query, tf, max_pages=max_pages)
