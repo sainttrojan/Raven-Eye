@@ -10,7 +10,7 @@ from scrapers.dubizzle import DubizzleScraper
 TELEGRAM_TOKEN = "8718465204:AAGvGQWwzEcwjSTKLQR4Uk27DYbVPy_V-Ps"
 ADMIN_CHAT_ID = "8291802346"
 SCRAPER_API_KEY = "efda9176f26841a181772cf1f7d5602c"
-DEFAULT_QUERY = "شقة للبيع مدينتي"
+DEFAULT_QUERIES = ["شقة للبيع في مدينتي من المالك", "شقة للايجار في مدينتي من المالك"]
 
 DB_FILE = "seen_properties.json"
 SUBS_FILE = "subscribers.json"
@@ -91,10 +91,12 @@ def background_radar():
     global radar_is_running
     while True:
         if radar_is_running:
-            try:
-                run_radar_iteration(DEFAULT_QUERY)
-            except Exception as e:
-                print("Radar Error:", e)
+            for q in DEFAULT_QUERIES:
+                try:
+                    run_radar_iteration(q)
+                except Exception as e:
+                    print("Radar Error:", e)
+                time.sleep(10) # 10 seconds between different queries
         time.sleep(10800) # 3 hours
 
 @bot.message_handler(commands=['start', 'help'])
