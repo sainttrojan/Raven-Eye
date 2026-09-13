@@ -8,3 +8,4 @@ fb_cookies.json
 *.csv
 config.json
 *.db
+.env

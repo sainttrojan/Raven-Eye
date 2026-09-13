@@ -6,17 +6,14 @@ import threading
 import requests
 import telebot
 from telebot import types
+from dotenv import load_dotenv
+load_dotenv()
 from scrapers.dubizzle import DubizzleScraper
 
-TELEGRAM_TOKEN = "8718465204:AAGvGQWwzEcwjSTKLQR4Uk27DYbVPy_V-Ps"
-ADMIN_CHAT_ID = "8291802346"
-SCRAPER_API_KEYS = [
-    "085a9eef6828dfd6bb77a6f30ca19b3b",
-    "af5da6333540757495114e2c35cf685d",
-    "df094a68b9768ecf6a694cd4ab045fdb",
-    "15428b0bc961dc879128ca2e8db2ab61",
-    "efda9176f26841a181772cf1f7d5602c"
-]
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
+SCRAPER_API_KEYS = [k.strip() for k in os.getenv("SCRAPER_API_KEYS", "").split(",") if k.strip()]
+
 DEFAULT_QUERIES = ["شقة للبيع في مدينتي من المالك", "شقة للايجار في مدينتي من المالك"]
 
 DB_FILE = "seen_properties.json"

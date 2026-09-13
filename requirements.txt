@@ -4,3 +4,4 @@ requests
 openpyxl
 beautifulsoup4
 pyTelegramBotAPI
+python-dotenv
