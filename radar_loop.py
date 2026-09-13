@@ -242,7 +242,16 @@ def credits_btn(message):
                 total_limit += limit
                 total_rem += max(0, limit - used)
             except: pass
-
+            
+        lines = [
+            "📊 <b>إجمالي رصيد جميع الحسابات</b>",
+            "",
+            f"🔹 المستخدم الكلي: {total_used}",
+            f"🔹 المتبقي الكلي: <b>{total_rem}</b>",
+            f"🔹 الحد الأقصى الكلي: {total_limit}"
+        ]
+        text = "\n".join(lines)
+        
         bot.reply_to(message, text, parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء جلب الرصيد.")
