@@ -1,39 +1,63 @@
-# Raven Eye System 🦅
+# 🦅 Raven-Eye (Real Estate OS)
 
-A powerful Real Estate Intelligence System built with Python, Streamlit, and ScraperAPI.
-It acts as a smart engine to find, extract, and monitor real estate listings from top platforms in Egypt (Dubizzle, Property Finder, Aqarmap, Facebook, Instagram, Twitter).
+Raven-Eye is an advanced, intelligent Real Estate Operating System designed to disrupt the traditional property search in the Egyptian market. It acts as an automated radar that bypasses broker manipulations, duplicate advertisements, and restricted search engines to source properties **directly from owners** on Dubizzle.
 
-## Features ✨
-- **Live Search & Extraction:** Search properties using advanced Google Dorks.
-- **Smart URL Filtering:** Strictly ignores category/search pages and targets exact individual listings.
-- **API Key Rotation:** Supports multiple ScraperAPI keys and automatically rotates them on failure or exhaustion (403/429).
-- **Persistent Database:** SQLite integration to save history and avoid duplicate entries.
-- **Export to Excel:** Download live reports and historical data.
+---
 
-## Installation 🛠️
-```bash
-# Clone the repository
-git clone https://github.com/sainttrojan/Raven-Eye.git
-cd Raven-Eye
+## 🚀 Key Features
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+### 1. Direct & Deep Scraping (Dubizzle)
+- Completely bypasses Google's limited index by fetching data directly from Dubizzle's internal servers.
+- Uses **ScraperAPI (`render=true`)** to successfully bypass Cloudflare protections and JavaScript challenges.
+- Intelligently parses React-based dynamic HTML structures (extracting from `<li aria-label="Listing">` tags).
 
-# Install dependencies
-pip install -r requirements.txt
+### 2. High-Performance Multithreading
+- Capable of fetching and analyzing up to **200 pages concurrently**.
+- Built-in `ThreadPoolExecutor` ensures blazing-fast extraction without exceeding ScraperAPI's free-tier concurrency limits (Max 5 concurrent threads).
+- URL encoding logic dynamically replaces spaces with dashes to match Dubizzle's strictly formatted query URLs.
 
-# Run the system
-streamlit run app.py
-```
+### 3. Telegram Radar Bot (24/7 Background Worker)
+A fully integrated, interactive Telegram bot that acts as your personal real estate assistant in your pocket.
+- **Automated Radar:** Runs a background loop every 3 hours to fetch new properties.
+- **Smart Memory:** Keeps track of previously seen URLs to ensure you only get notified about **brand new** listings, preventing spam.
+- **Interactive Commands:**
+  - `/status` : Check if the background radar is running.
+  - `/pause` / `/resume` : Start or pause the automated background scraping.
+  - `/credits` : Instantly check your remaining ScraperAPI balance.
+  - `/search <query>` : Manually trigger an immediate deep-search and get results pushed directly to Telegram.
 
-## Configuration ⚙️
-1. Go to the "الإعدادات" (Settings) tab inside the app.
-2. Enter your ScraperAPI keys (one per line).
-3. The system will save them securely to `config.json` and automatically handle key rotation.
+### 4. Dual-Process Deployment (Render)
+- Includes a custom `start.sh` script that spins up **both** the interactive Telegram background bot and the Streamlit web dashboard simultaneously within the same container.
+- Fully compatible with Render Web Services and easily integrated with Custom Domains (e.g., Namecheap).
 
-## Next Features Roadmap 🗺️
-- Deep Scraping: Extract full descriptions and images from inside listing pages.
-- Owner vs Broker Detection: AI/Heuristic filtering to classify posters.
-- Analytics Dashboard.
-- Live Alerts via Telegram/WhatsApp.
+---
+
+## 🛠️ Tech Stack
+- **Python 3.x**
+- **Streamlit:** Interactive web dashboard for manual searches and visual data analysis.
+- **BeautifulSoup4:** Advanced DOM parsing.
+- **pyTelegramBotAPI:** For the interactive Telegram bot interface.
+- **Concurrent.futures:** For asynchronous multithreaded scraping.
+
+---
+
+## 💻 How to Run Locally
+
+1. Clone the repository.
+2. Install the requirements:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Set your environment variables (or add them directly in `radar_loop.py` & `.streamlit/secrets.toml`):
+   - `SCRAPER_API_KEY`
+   - `TELEGRAM_TOKEN`
+   - `TELEGRAM_CHAT_ID`
+4. Run the dual-process startup script:
+   ```bash
+   bash start.sh
+   ```
+   *(This will launch the Telegram bot in the background and start the Streamlit web server on port 8501).*
+
+---
+
+*Built with 💻 for the Egyptian Real Estate Market.*
