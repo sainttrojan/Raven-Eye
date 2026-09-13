@@ -3,3 +3,4 @@ pandas
 requests
 openpyxl
 beautifulsoup4
+pyTelegramBotAPI
