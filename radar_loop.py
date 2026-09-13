@@ -10,7 +10,13 @@ from scrapers.dubizzle import DubizzleScraper
 
 TELEGRAM_TOKEN = "8718465204:AAGvGQWwzEcwjSTKLQR4Uk27DYbVPy_V-Ps"
 ADMIN_CHAT_ID = "8291802346"
-SCRAPER_API_KEY = "efda9176f26841a181772cf1f7d5602c"
+SCRAPER_API_KEYS = [
+    "085a9eef6828dfd6bb77a6f30ca19b3b",
+    "af5da6333540757495114e2c35cf685d",
+    "df094a68b9768ecf6a694cd4ab045fdb",
+    "15428b0bc961dc879128ca2e8db2ab61",
+    "efda9176f26841a181772cf1f7d5602c"
+]
 DEFAULT_QUERIES = ["شقة للبيع في مدينتي من المالك", "شقة للايجار في مدينتي من المالك"]
 
 DB_FILE = "seen_properties.json"
@@ -40,7 +46,7 @@ def save_seen(seen_set):
         json.dump(list(seen_set), f)
 
 async def fetch_properties(query, max_pages=1):
-    scraper = DubizzleScraper([SCRAPER_API_KEY])
+    scraper = DubizzleScraper(SCRAPER_API_KEYS)
     results = await scraper.search(query, max_pages=max_pages)
     return results
 
@@ -108,14 +114,17 @@ def run_radar_iteration(query, target_chat_id=None):
     return len(new_results)
 
 def check_credits_internal():
-    try:
-        resp = requests.get(f"http://api.scraperapi.com/account?api_key={SCRAPER_API_KEY}")
-        data = resp.json()
-        used = data.get('requestCount', 0)
-        limit = data.get('requestLimit', 0)
-        return limit - used
-    except:
-        return 9999
+    total_rem = 0
+    for key in SCRAPER_API_KEYS:
+        try:
+            resp = requests.get(f"http://api.scraperapi.com/account?api_key={key}", timeout=5)
+            data = resp.json()
+            used = data.get('requestCount', 0)
+            limit = data.get('requestLimit', 0)
+            total_rem += max(0, limit - used)
+        except:
+            pass
+    return total_rem
 
 def background_radar():
     global radar_is_running
@@ -200,13 +209,22 @@ def restart_btn(message):
 @bot.message_handler(func=lambda message: message.text in ['💰 الرصيد', '/credits'])
 def credits_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
+    bot.reply_to(message, "جاري فحص جميع الحسابات... ⏳")
     try:
-        resp = requests.get(f"http://api.scraperapi.com/account?api_key={SCRAPER_API_KEY}")
-        data = resp.json()
-        used = data.get('requestCount', 0)
-        limit = data.get('requestLimit', 0)
-        rem = limit - used
-        text = f"📊 <b>رصيد حساب ScraperAPI</b>\n\n🔹 المستخدم: {used}\n🔹 المتبقي: <b>{rem}</b>\n🔹 الحد الأقصى: {limit}"
+        total_used = 0
+        total_limit = 0
+        total_rem = 0
+        for key in SCRAPER_API_KEYS:
+            try:
+                resp = requests.get(f"http://api.scraperapi.com/account?api_key={key}", timeout=5)
+                data = resp.json()
+                used = data.get('requestCount', 0)
+                limit = data.get('requestLimit', 0)
+                total_used += used
+                total_limit += limit
+                total_rem += max(0, limit - used)
+            except: pass
+
         bot.reply_to(message, text, parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء جلب الرصيد.")
