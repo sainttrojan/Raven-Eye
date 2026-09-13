@@ -1,3 +1,4 @@
+user_search_state = {}
 import os
 import json
 import time
@@ -9,6 +10,7 @@ from telebot import types
 from dotenv import load_dotenv
 load_dotenv()
 from scrapers.dubizzle import DubizzleScraper
+from scrapers.google import GoogleScraper
 from core.config import load_api_keys
 
 
@@ -22,6 +24,7 @@ SUBS_FILE = "subscribers.json"
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 radar_is_running = True
+
 
 def load_subscribers():
     if os.path.exists(SUBS_FILE):
@@ -49,22 +52,6 @@ async def fetch_properties(query, max_pages=1):
     return results
 
 def is_valid_result(r, query):
-    text = (r.title + " " + r.description).lower()
-    
-    if "مدينتي" in query:
-        if "مدينتي" not in text:
-            return False
-            
-        bad_cities = ["الشروق", "بدر", "الرحاب", "المستقبل", "التجمع", "العاصمة", "العبور"]
-        for bc in bad_cities:
-            if bc in text:
-                return False
-                
-    bad_keywords = ["شركة", "بروكر", "عمولة", "تسويق", "وسيط", "مكتب", "سمسار"]
-    for bk in bad_keywords:
-        if bk in text:
-            return False
-            
     return True
 
 def run_radar_iteration(query, target_chat_id=None):
@@ -195,6 +182,7 @@ def resume_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     global radar_is_running
     radar_is_running = True
+
     bot.reply_to(message, "تم إعادة تشغيل الرادار 🟢")
 
 @bot.message_handler(func=lambda message: message.text in ['🔄 ريستارت', '/restart'])
@@ -236,23 +224,144 @@ def credits_btn(message):
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء جلب الرصيد.")
 
+
 @bot.message_handler(func=lambda message: message.text in ['🔍 بحث جديد', '/search'])
 def manual_search_btn(message):
-    msg = bot.reply_to(message, "اكتب الكلمة اللي عايز تبحث عنها دلوقتي (مثال: شقة للبيع مدينتي):")
-    bot.register_next_step_handler(msg, process_search_query)
+    chat_id = str(message.chat.id)
+    user_search_state[chat_id] = {}
+    msg = bot.reply_to(message, "اكتب الكلمة اللي عايز تبحث عنها (مثال: شقة للبيع مدينتي):")
+    bot.register_next_step_handler(msg, step_keyword)
 
-def process_search_query(message):
-    query = message.text.strip()
-    if not query: return
-    bot.reply_to(message, f"جاري البحث عن: {query} ⏳")
+def step_keyword(message):
+    chat_id = str(message.chat.id)
+    if not message.text: return
+    user_search_state[chat_id]['query'] = message.text.strip()
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("جميع المواقع", callback_data="site_all"),
+        types.InlineKeyboardButton("Dubizzle فقط", callback_data="site_dubizzle"),
+        types.InlineKeyboardButton("PropertyFinder فقط", callback_data="site_pf"),
+        types.InlineKeyboardButton("Aqarmap فقط", callback_data="site_aqarmap")
+    )
+    bot.send_message(message.chat.id, "اختار الموقع اللي عايز تبحث فيه:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('site_'))
+def step_site(call):
+    chat_id = str(call.message.chat.id)
+    if chat_id not in user_search_state: return
+    
+    site_map = {
+        "site_all": "جميع المواقع",
+        "site_dubizzle": "Dubizzle فقط",
+        "site_pf": "PropertyFinder فقط",
+        "site_aqarmap": "Aqarmap فقط"
+    }
+    user_search_state[chat_id]['site'] = site_map.get(call.data, "جميع المواقع")
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("أي وقت", callback_data="time_any"),
+        types.InlineKeyboardButton("آخر 24 ساعة", callback_data="time_24h"),
+        types.InlineKeyboardButton("آخر أسبوع", callback_data="time_week")
+    )
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, 
+                          text=f"تم اختيار: {user_search_state[chat_id]['site']}\n\nاختار تاريخ النشر:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('time_'))
+def step_time(call):
+    chat_id = str(call.message.chat.id)
+    if chat_id not in user_search_state: return
+    
+    time_map = {
+        "time_any": "أي وقت",
+        "time_24h": "آخر 24 ساعة",
+        "time_week": "آخر أسبوع"
+    }
+    user_search_state[chat_id]['time'] = time_map.get(call.data, "أي وقت")
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("نعم، تطابق حرفي", callback_data="exact_yes"),
+        types.InlineKeyboardButton("لا، بحث عادي", callback_data="exact_no")
+    )
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, 
+                          text=f"تم اختيار: {user_search_state[chat_id]['time']}\n\nهل تريد تطابق الجملة بالكامل؟", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('exact_'))
+def step_exact(call):
+    chat_id = str(call.message.chat.id)
+    if chat_id not in user_search_state: return
+    
+    exact = True if call.data == "exact_yes" else False
+    user_search_state[chat_id]['exact'] = exact
+    
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="جاري البحث بناءً على اختياراتك... ⏳")
+    
+    # Run the search asynchronously
+    threading.Thread(target=execute_custom_search, args=(chat_id, user_search_state[chat_id])).start()
+
+def execute_custom_search(chat_id, state):
+    query = state['query']
+    site_option = state['site']
+    time_option = state['time']
+    exact_match = state['exact']
+    
+    final_query = query
+    if exact_match:
+        final_query = f'"{query}"'
+        
+    if site_option == "PropertyFinder فقط":
+        final_query += " site:propertyfinder.eg"
+    elif site_option == "Dubizzle فقط":
+        # Dubizzle is handled separately, but for Google fallback we need the site parameter
+        pass 
+    elif site_option == "Aqarmap فقط":
+        final_query += " site:aqarmap.com.eg"
+        
+    time_filter = ""
+    if time_option == "آخر 24 ساعة":
+        time_filter = "qdr:d"
+    elif time_option == "آخر أسبوع":
+        time_filter = "qdr:w"
+        
     try:
-        count = run_radar_iteration(query, target_chat_id=str(message.chat.id))
-        if count > 0:
-            bot.reply_to(message, f"تم الانتهاء! لقيت {count} نتائج جديدة وبعتها فوق ☝️")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        async def fetch():
+            if site_option == "Dubizzle فقط":
+                scraper = DubizzleScraper(load_api_keys())
+                return await scraper.search(query, time_filter, max_pages=3)
+            else:
+                scraper = GoogleScraper(load_api_keys())
+                return await scraper.search(final_query, time_filter, max_pages=3)
+                
+        results = loop.run_until_complete(fetch())
+        
+        if results:
+            bot.send_message(chat_id, f"✅ تم العثور على {len(results)} نتائج. جاري إرسالها...")
+            for r in results[:15]: # Limit to 15 to avoid telegram spam
+                price_text = r.price if r.price else "غير محدد"
+                area_text = r.area if r.area else "غير محدد"
+                msg = (
+                    f"📌 <b>العنوان:</b> {r.title}\n"
+                    f"💰 <b>السعر:</b> {price_text}\n"
+                    f"📏 <b>المساحة:</b> {area_text}\n"
+                    f"📝 <b>التفاصيل:</b> {r.description}\n\n"
+                    f"🔗 <a href='{r.url}'>رابط الإعلان</a>"
+                )
+                bot.send_message(chat_id, msg, parse_mode="HTML")
+                time.sleep(1)
+            if len(results) > 15:
+                bot.send_message(chat_id, f"تم إخفاء {len(results) - 15} نتيجة إضافية لتجنب الإزعاج.")
         else:
-            bot.reply_to(message, "تم الانتهاء بس مفيش شقق جديدة ظهرت.")
+            bot.send_message(chat_id, "❌ لم يتم العثور على أي نتائج مطابقة لاختياراتك.")
+            
     except Exception as e:
-        bot.reply_to(message, "حدث خطأ أثناء البحث.")
+        bot.send_message(chat_id, "⚠️ حدث خطأ أثناء البحث.")
+        print(f"Custom Search Error: {e}")
+
 
 if __name__ == "__main__":
     print("Starting Telegram Bot and Radar...")
