@@ -9,10 +9,11 @@ from telebot import types
 from dotenv import load_dotenv
 load_dotenv()
 from scrapers.dubizzle import DubizzleScraper
+from core.config import load_api_keys
+
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
-SCRAPER_API_KEYS = [k.strip() for k in os.getenv("SCRAPER_API_KEYS", "").split(",") if k.strip()]
 
 DEFAULT_QUERIES = ["شقة للبيع في مدينتي من المالك", "شقة للايجار في مدينتي من المالك"]
 
@@ -43,7 +44,7 @@ def save_seen(seen_set):
         json.dump(list(seen_set), f)
 
 async def fetch_properties(query, max_pages=1):
-    scraper = DubizzleScraper(SCRAPER_API_KEYS)
+    scraper = DubizzleScraper(load_api_keys())
     results = await scraper.search(query, max_pages=max_pages)
     return results
 
@@ -130,7 +131,7 @@ def run_radar_iteration(query, target_chat_id=None):
 
 def check_credits_internal():
     total_rem = 0
-    for key in SCRAPER_API_KEYS:
+    for key in load_api_keys():
         try:
             resp = requests.get(f"http://api.scraperapi.com/account?api_key={key}", timeout=5)
             data = resp.json()
@@ -229,7 +230,7 @@ def credits_btn(message):
         total_used = 0
         total_limit = 0
         total_rem = 0
-        for key in SCRAPER_API_KEYS:
+        for key in load_api_keys():
             try:
                 resp = requests.get(f"http://api.scraperapi.com/account?api_key={key}", timeout=5)
                 data = resp.json()
