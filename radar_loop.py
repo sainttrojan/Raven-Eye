@@ -145,10 +145,18 @@ def send_welcome(message):
             "/status - لمعرفة حالة الرادار\n"
             "/credits - لمعرفة رصيدك المتبقي في ScraperAPI\n"
             "/pause - إيقاف الرادار مؤقتاً لجميع المستخدمين\n"
-            "/resume - إعادة تشغيل الرادار\n"
+            "/resume - إعادة تشغيل الرادار\n            /restart - عمل ريستارت كامل للبوت\n"
         )
         
     bot.reply_to(message, text)
+
+@bot.message_handler(commands=['restart'])
+def restart_bot(message):
+    if str(message.chat.id) != ADMIN_CHAT_ID: return
+    bot.reply_to(message, "جاري إعادة تشغيل نظام الرادار... 🔄")
+    import sys
+    import os
+    os.execv(sys.executable, ['python'] + sys.argv)
 
 @bot.message_handler(commands=['status'])
 def status(message):
