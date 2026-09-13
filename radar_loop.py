@@ -51,6 +51,10 @@ async def fetch_properties(query, max_pages=1):
     results = await scraper.search(query, max_pages=max_pages)
     return results
 
+def escape_html(text):
+    if not text: return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 def is_valid_result(r, query):
     if r.price:
         import re
@@ -88,10 +92,10 @@ def run_radar_iteration(query, target_chat_id=None):
         area_text = r.area if r.area else "غير محدد"
         msg = (
             f"🚨 <b>عقار جديد متاح!</b>\n\n"
-            f"📌 <b>العنوان:</b> {r.title}\n"
+            f"📌 <b>العنوان:</b> {escape_html(r.title)}\n"
             f"💰 <b>السعر:</b> {price_text}\n"
             f"📏 <b>المساحة:</b> {area_text}\n"
-            f"📝 <b>التفاصيل:</b> {r.description}\n\n"
+            f"📝 <b>التفاصيل:</b> {escape_html(r.description)}\n\n"
             f"🔗 <a href='{r.url}'>رابط الإعلان</a>"
         )
         
@@ -354,10 +358,10 @@ def execute_custom_search(chat_id, state):
                 price_text = r.price if r.price else "غير محدد"
                 area_text = r.area if r.area else "غير محدد"
                 msg = (
-                    f"📌 <b>العنوان:</b> {r.title}\n"
+                    f"📌 <b>العنوان:</b> {escape_html(r.title)}\n"
                     f"💰 <b>السعر:</b> {price_text}\n"
                     f"📏 <b>المساحة:</b> {area_text}\n"
-                    f"📝 <b>التفاصيل:</b> {r.description}\n\n"
+                    f"📝 <b>التفاصيل:</b> {escape_html(r.description)}\n\n"
                     f"🔗 <a href='{r.url}'>رابط الإعلان</a>"
                 )
                 bot.send_message(chat_id, msg, parse_mode="HTML")
