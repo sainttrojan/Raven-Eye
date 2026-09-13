@@ -5,6 +5,7 @@ import asyncio
 import threading
 import requests
 import telebot
+from telebot import types
 from scrapers.dubizzle import DubizzleScraper
 
 TELEGRAM_TOKEN = "8718465204:AAGvGQWwzEcwjSTKLQR4Uk27DYbVPy_V-Ps"
@@ -143,6 +144,23 @@ def background_radar():
                 print("Skipping radar run because credits are empty.")
         time.sleep(10800) # 3 hours
 
+
+def get_main_keyboard(chat_id):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    item_search = types.KeyboardButton('🔍 بحث جديد')
+    
+    if str(chat_id) == ADMIN_CHAT_ID:
+        item_status = types.KeyboardButton('📊 حالة الرادار')
+        item_credits = types.KeyboardButton('💰 الرصيد')
+        item_pause = types.KeyboardButton('⏸️ إيقاف الرادار')
+        item_resume = types.KeyboardButton('▶️ تشغيل الرادار')
+        item_restart = types.KeyboardButton('🔄 ريستارت')
+        markup.add(item_search, item_status, item_credits, item_pause, item_resume, item_restart)
+    else:
+        markup.add(item_search)
+        
+    return markup
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = str(message.chat.id)
@@ -150,55 +168,40 @@ def send_welcome(message):
     if chat_id not in subs:
         subs.add(chat_id)
         save_subscribers(subs)
-        bot.reply_to(message, "مرحباً بك! تم تفعيل إشعارات رادار Raven-Eye 🦅\nسيصلك كل جديد فور نزوله.")
-    
-    text = (
-        "أهلاً بك في نظام تحكم Raven-Eye 🦅\n\n"
-        "اليك قائمة الأوامر المتاحة لك:\n"
-        "/search - للبحث اليدوي الآن، مثال: /search شقة مدينتي\n"
-    )
-    
-    if chat_id == ADMIN_CHAT_ID:
-        text += (
-            "\n👑 أوامر الإدارة الخاصة بك فقط:\n"
-            "/status - لمعرفة حالة الرادار\n"
-            "/credits - لمعرفة رصيدك المتبقي في ScraperAPI\n"
-            "/pause - إيقاف الرادار مؤقتاً لجميع المستخدمين\n"
-            "/resume - إعادة تشغيل الرادار\n            /restart - عمل ريستارت كامل للبوت\n"
-        )
         
-    bot.reply_to(message, text)
+    text = "أهلاً بك في نظام تحكم Raven-Eye 🦅
+استخدم الأزرار بالأسفل للتحكم:"
+    bot.send_message(message.chat.id, text, reply_markup=get_main_keyboard(chat_id))
 
-@bot.message_handler(commands=['restart'])
-def restart_bot(message):
-    if str(message.chat.id) != ADMIN_CHAT_ID: return
-    bot.reply_to(message, "جاري إعادة تشغيل نظام الرادار... 🔄")
-    import sys
-    import os
-    os.execv(sys.executable, ['python'] + sys.argv)
-
-@bot.message_handler(commands=['status'])
-def status(message):
+@bot.message_handler(func=lambda message: message.text in ['📊 حالة الرادار', '/status'])
+def status_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     state = "شغال 🟢" if radar_is_running else "متوقف 🔴"
     bot.reply_to(message, f"حالة الرادار الآن: {state}")
 
-@bot.message_handler(commands=['pause'])
-def pause(message):
+@bot.message_handler(func=lambda message: message.text in ['⏸️ إيقاف الرادار', '/pause'])
+def pause_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     global radar_is_running
     radar_is_running = False
     bot.reply_to(message, "تم إيقاف الرادار مؤقتاً 🔴")
 
-@bot.message_handler(commands=['resume'])
-def resume(message):
+@bot.message_handler(func=lambda message: message.text in ['▶️ تشغيل الرادار', '/resume'])
+def resume_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     global radar_is_running
     radar_is_running = True
     bot.reply_to(message, "تم إعادة تشغيل الرادار 🟢")
 
-@bot.message_handler(commands=['credits'])
-def credits(message):
+@bot.message_handler(func=lambda message: message.text in ['🔄 ريستارت', '/restart'])
+def restart_btn(message):
+    if str(message.chat.id) != ADMIN_CHAT_ID: return
+    bot.reply_to(message, "جاري إعادة تشغيل نظام الرادار... 🔄")
+    import sys, os
+    os.execv(sys.executable, ['python'] + sys.argv)
+
+@bot.message_handler(func=lambda message: message.text in ['💰 الرصيد', '/credits'])
+def credits_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     try:
         resp = requests.get(f"http://api.scraperapi.com/account?api_key={SCRAPER_API_KEY}")
@@ -206,21 +209,25 @@ def credits(message):
         used = data.get('requestCount', 0)
         limit = data.get('requestLimit', 0)
         rem = limit - used
-        text = f"📊 <b>رصيد حساب ScraperAPI</b>\n\n🔹 المستخدم: {used}\n🔹 المتبقي: <b>{rem}</b>\n🔹 الحد الأقصى: {limit}"
+        text = f"📊 <b>رصيد حساب ScraperAPI</b>
+
+🔹 المستخدم: {used}
+🔹 المتبقي: <b>{rem}</b>
+🔹 الحد الأقصى: {limit}"
         bot.reply_to(message, text, parse_mode="HTML")
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء جلب الرصيد.")
 
-@bot.message_handler(commands=['search'])
-def manual_search(message):
-    query = message.text.replace('/search', '').strip()
-    if not query:
-        bot.reply_to(message, "اكتب الكلمة بعد الأمر، مثال:\n/search شقة مدينتي")
-        return
-        
+@bot.message_handler(func=lambda message: message.text in ['🔍 بحث جديد', '/search'])
+def manual_search_btn(message):
+    msg = bot.reply_to(message, "اكتب الكلمة اللي عايز تبحث عنها دلوقتي (مثال: شقة للبيع مدينتي):")
+    bot.register_next_step_handler(msg, process_search_query)
+
+def process_search_query(message):
+    query = message.text.strip()
+    if not query: return
     bot.reply_to(message, f"جاري البحث عن: {query} ⏳")
     try:
-        # Pass target_chat_id so search results only go to the person who asked!
         count = run_radar_iteration(query, target_chat_id=str(message.chat.id))
         if count > 0:
             bot.reply_to(message, f"تم الانتهاء! لقيت {count} نتائج جديدة وبعتها فوق ☝️")
@@ -228,6 +235,7 @@ def manual_search(message):
             bot.reply_to(message, "تم الانتهاء بس مفيش شقق جديدة ظهرت.")
     except Exception as e:
         bot.reply_to(message, "حدث خطأ أثناء البحث.")
+
 
 if __name__ == "__main__":
     print("Starting Telegram Bot and Radar...")
