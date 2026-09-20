@@ -91,6 +91,29 @@ with tab3:
         else:
             st.error("يجب إدخال مفتاح واحد على الأقل.")
 
+    st.divider()
+    st.markdown("#### فيسبوك ماركتبليس (مصدر سوشيال)")
+    from core.config import fb_session_available
+    if fb_session_available():
+        st.success("جلسة فيسبوك موجودة — اختيار 'Facebook فقط' هيسحب مباشر من الماركتبليس.")
+    else:
+        st.warning("مفيش جلسة فيسبوك محفوظة.")
+        st.caption("للتفعيل من التيرمينال مرة واحدة (هيفتح متصفح تسجل فيه الدخول بنفسك، والباسورد مش بيتخزن):")
+        st.code("cd ~/Desktop/Raven-Eye && ./venv/bin/python fb_login.py")
+
+    st.divider()
+    st.markdown("#### جروبات فيسبوك (عقارات مدينتي)")
+    st.caption("روابط الجروبات اللي حسابك عضو فيها — رابط في كل سطر. مثال: https://www.facebook.com/groups/madinatyowners")
+    from core.config import load_fb_groups, save_fb_groups
+    groups_text = st.text_area("روابط الجروبات:", value="\n".join(load_fb_groups()), height=120)
+    if st.button("حفظ الجروبات"):
+        new_groups = [g.strip() for g in groups_text.split("\n") if g.strip()]
+        save_fb_groups(new_groups)
+        st.success(f"تم حفظ {len(new_groups)} جروب.")
+    else:
+        if load_fb_groups():
+            st.caption(f"المسجل حاليا: {len(load_fb_groups())} جروب.")
+
 
 with tab2:
     st.subheader("العقارات المحفوظة مسبقاً")
@@ -128,6 +151,7 @@ with tab1:
             "Dubizzle فقط", 
             "Aqarmap فقط",
             "Facebook فقط",
+            "جروبات فيسبوك",
             "Instagram فقط",
             "Twitter فقط"
         ])
@@ -141,6 +165,37 @@ with tab1:
         st.write("")
         st.write("")
         max_pages = st.number_input("عدد الصفحات", min_value=1, max_value=200, value=5)
+
+    colf1, colf2 = st.columns(2)
+    with colf1:
+        madinaty_only = st.checkbox("مدينتي فقط (يستبعد الشروق/بدر/الرحاب/التجمع...)", value=True)
+    with colf2:
+        owner_filter = st.selectbox("المعلن", ["الكل", "مالك فقط", "بروكر فقط", "غير معروف فقط"])
+
+    fb_details = False
+    fb_detail_limit = 10
+    fb_groups: list = []
+    if site_option == "Facebook فقط":
+        from core.config import fb_session_available
+        if fb_session_available():
+            st.success("جلسة فيسبوك موجودة — السحب هيكون مباشر من الماركتبليس.")
+        else:
+            st.warning("مفيش جلسة فيسبوك — هيتم السحب عبر جوجل كبديل. للتفعيل: venv/bin/python fb_login.py")
+        fb_details = st.checkbox("فتح صفحات الإعلانات لجلب الوصف ورقم الهاتف (أبطأ)", value=False)
+        if fb_details:
+            fb_detail_limit = st.number_input("عدد الإعلانات للتفصيل", min_value=1, max_value=30, value=10)
+
+    if site_option == "جروبات فيسبوك":
+        from core.config import fb_session_available, load_fb_groups
+        fb_groups = load_fb_groups()
+        if fb_session_available() and fb_groups:
+            st.success(f"هيتم البحث في {len(fb_groups)} جروب مسجل.")
+        elif not fb_session_available():
+            st.warning("مفيش جلسة فيسبوك — للتفعيل: venv/bin/python fb_login.py")
+        if not fb_groups:
+            st.warning("مفيش جروبات متسجلة — ضيف روابط الجروبات من تاب الإعدادات الأول.")
+        else:
+            st.caption("الجروبات: " + "، ".join(fb_groups[:5]) + ("..." if len(fb_groups) > 5 else ""))
 
     search_clicked = st.button("بحث", use_container_width=True)
 
@@ -170,19 +225,49 @@ with tab1:
         elif time_option == "آخر شهر":
             time_filter = "qdr:m"
 
-        async def fetch_results():
+        # Snapshot session values here (main thread): worker threads
+        # cannot access st.session_state.
+        api_keys = list(st.session_state.get("api_keys") or [])
+
+        async def fetch_results(keys):
             if site_option == "Dubizzle فقط":
-                scraper = DubizzleScraper(st.session_state['api_keys'])
+                scraper = DubizzleScraper(keys)
                 return await scraper.search(query, time_filter, max_pages=max_pages)
             else:
-                scraper = GoogleScraper(st.session_state['api_keys'])
+                scraper = GoogleScraper(keys)
                 return await scraper.search(final_query, time_filter, max_pages=max_pages)
 
         def run_in_thread():
             """Run async fetch in a clean thread to avoid Streamlit event loop conflicts."""
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(asyncio.run, fetch_results())
+                if site_option == "Facebook فقط":
+                    from core.config import fb_session_available
+                    from core.fb_session import FacebookNotLoggedIn, run_facebook_search
+                    if fb_session_available():
+                        try:
+                            future = ex.submit(run_facebook_search, query, max_pages,
+                                               fb_details, fb_detail_limit)
+                            return future.result(timeout=600)
+                        except FacebookNotLoggedIn as e:
+                            st.warning(f"{e} — هنكمل عبر بحث جوجل كبديل.")
+                        except Exception as e:
+                            st.warning(f"سحب فيسبوك المباشر فشل ({e}) — هنكمل عبر بحث جوجل كبديل.")
+                    else:
+                        st.info("هنبحث عبر جوجل: site:facebook.com (الجلسة المباشرة مش متفعلة).")
+                if site_option == "جروبات فيسبوك":
+                    from core.fb_session import FacebookNotLoggedIn, run_facebook_groups_search
+                    try:
+                        future = ex.submit(run_facebook_groups_search, query, fb_groups,
+                                           min(int(max_pages), 5))
+                        return future.result(timeout=900)
+                    except FacebookNotLoggedIn as e:
+                        st.error(str(e))
+                        return []
+                    except Exception as e:
+                        st.error(f"سحب الجروبات فشل: {e}")
+                        return []
+                future = ex.submit(asyncio.run, fetch_results(api_keys))
                 return future.result(timeout=300)
 
         with st.spinner(f"جاري سحب البيانات من {max_pages} صفحات... برجاء الانتظار"):
@@ -192,24 +277,65 @@ with tab1:
                 if results:
                     st.success(f"تم استخراج {len(results)} نتيجة بنجاح.")
 
+                    from core.listing_classifier import is_madinaty, classify
+                    from core.phone_osint import find_in_database as _phone_corr
+
                     data = []
                     new_count = 0
+                    skipped_city = 0
                     for result in results:
                         res_dict = result.to_dict()
+                        title = res_dict.get('Title', '') or ''
+                        desc = res_dict.get('Description', '') or ''
+                        url = res_dict.get('URL', '') or ''
+                        if madinaty_only:
+                            geo = is_madinaty(title, desc, url, strict=True)
+                            if not geo["in_madinaty"]:
+                                skipped_city += 1
+                                continue
+                        phone = res_dict.get('Phone Number', '') or ''
+                        phone_count = None
+                        if phone:
+                            try:
+                                corr = _phone_corr(phone, db)
+                                phone_count = corr.get("count") if corr.get("ok") else None
+                            except Exception:
+                                phone_count = None
+                        cls = classify(title, desc, url,
+                                       phone_listing_count=phone_count,
+                                       scraper_broker_type=res_dict.get('Broker Type'),
+                                       author=res_dict.get('Author', '') or '')
+                        if owner_filter == "مالك فقط" and cls["label"] != "owner":
+                            continue
+                        if owner_filter == "بروكر فقط" and cls["label"] != "broker":
+                            continue
+                        if owner_filter == "غير معروف فقط" and cls["label"] != "unknown":
+                            continue
                         data.append({
-                            'العنوان': res_dict['Title'],
+                            'العنوان': title,
                             'السعر': res_dict.get('Price', ''),
                             'المساحة': res_dict.get('Area', ''),
-                            'رقم الهاتف': res_dict.get('Phone Number', ''),
-                            'الرابط': res_dict['URL'],
-                            'الوصف': res_dict['Description']
+                            'رقم الهاتف': phone,
+                            'المعلن': cls["label_ar"],
+                            'سبب التصنيف': "; ".join(cls["reasons"][:2]),
+                            'صاحب البوست': res_dict.get('Author', '') or '',
+                            'بروفايل المعلن': res_dict.get('Author URL', '') or '',
+                            'الرابط': url,
+                            'الوصف': desc
                         })
 
                         # Save to database
                         inserted = db.insert_property(res_dict)
                         if inserted:
                             new_count += 1
+                        try:
+                            db.set_classification(url, cls["label"],
+                                                  cls["broker_score"], cls["owner_score"])
+                        except Exception:
+                            pass
 
+                    if madinaty_only and skipped_city:
+                        st.info(f"تم استبعاد {skipped_city} نتيجة خارج مدينتي.")
                     st.info(f"تم إضافة {new_count} عقار جديد لقاعدة البيانات.")
 
                     df = pd.DataFrame(data)

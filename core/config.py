@@ -65,3 +65,38 @@ def save_zenrows_key(key: str):
     data["zenrows_key"] = key
     with open(CONFIG_FILE, 'w') as f:
         json.dump(data, f)
+
+# ---------- Facebook Marketplace session ----------
+# One-time manual login via `venv/bin/python fb_login.py` saves the
+# authenticated storage state here; scrapers reuse it afterwards.
+FB_STORAGE_FILE = os.getenv("FB_STORAGE_FILE", "fb_storage_state.json")
+FB_COOKIES_FILE = os.getenv("FB_COOKIES_FILE", "fb_cookies.json")
+
+def fb_session_available() -> bool:
+    """True if a saved Facebook session exists (storage state or cookies)."""
+    return os.path.exists(FB_STORAGE_FILE) or os.path.exists(FB_COOKIES_FILE)
+
+def load_fb_groups():
+    """Group URLs/ids for Facebook Groups scraping (one per line in settings)."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                groups = json.load(f).get("fb_groups", [])
+                if groups:
+                    return [g.strip() for g in groups if g.strip()]
+        except: pass
+    env_groups = os.getenv("FB_GROUPS", "")
+    if env_groups:
+        return [g.strip() for g in env_groups.replace(",", "\n").split("\n") if g.strip()]
+    return []
+
+def save_fb_groups(groups):
+    data = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+        except: pass
+    data["fb_groups"] = [g.strip() for g in groups if g.strip()]
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(data, f)

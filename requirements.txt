@@ -8,5 +8,6 @@ python-dotenv
 user-scanner[mcp]>=1.5.2  # optional: broker OSINT (core/broker_osint.py works via CLI too)
 phonenumbers>=9.0  # phone OSINT offline layer (core/phone_osint.py)
 ignorant>=1.2  # phone account checks (core/phone_osint.py calls its library)
+playwright>=1.40  # Facebook Marketplace scraping (needs: python -m playwright install chromium)
 fpdf2>=2.8
 pandas>=2.0

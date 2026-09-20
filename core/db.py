@@ -52,6 +52,16 @@ class DatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            # Classification columns on existing DBs (safe ALTER).
+            cols = {r[1] for r in cursor.execute("PRAGMA table_info(properties)")}
+            if "owner_label" not in cols:
+                cursor.execute("ALTER TABLE properties ADD COLUMN owner_label TEXT DEFAULT ''")
+            if "owner_score" not in cols:
+                cursor.execute("ALTER TABLE properties ADD COLUMN owner_score INTEGER DEFAULT 0")
+            if "author" not in cols:
+                cursor.execute("ALTER TABLE properties ADD COLUMN author TEXT DEFAULT ''")
+            if "author_url" not in cols:
+                cursor.execute("ALTER TABLE properties ADD COLUMN author_url TEXT DEFAULT ''")
             conn.commit()
 
     def insert_property(self, property_data: Dict[str, Any]) -> bool:
@@ -63,8 +73,8 @@ class DatabaseManager:
             cursor = conn.cursor()
             try:
                 cursor.execute("""
-                    INSERT INTO properties (source, title, url, price, area, phone_number, location, description, broker_type, images)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO properties (source, title, url, price, area, phone_number, location, description, broker_type, images, author, author_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     property_data.get('Source'),
                     property_data.get('Title'),
@@ -75,7 +85,9 @@ class DatabaseManager:
                     property_data.get('Location'),
                     property_data.get('Description'),
                     property_data.get('Broker Type'),
-                    property_data.get('Images')
+                    property_data.get('Images'),
+                    property_data.get('Author'),
+                    property_data.get('Author URL')
                 ))
                 conn.commit()
                 return True
@@ -95,6 +107,22 @@ class DatabaseManager:
             
             results = []
             for row in rows:
+                try:
+                    owner_label = row['owner_label']
+                except (IndexError, KeyError):
+                    owner_label = ''
+                try:
+                    owner_score = row['owner_score']
+                except (IndexError, KeyError):
+                    owner_score = 0
+                try:
+                    author = row['author']
+                except (IndexError, KeyError):
+                    author = ''
+                try:
+                    author_url = row['author_url']
+                except (IndexError, KeyError):
+                    author_url = ''
                 results.append({
                     'Source': row['source'],
                     'Title': row['title'],
@@ -105,10 +133,26 @@ class DatabaseManager:
                     'Location': row['location'],
                     'Description': row['description'],
                     'Broker Type': row['broker_type'],
+                    'Owner Label': owner_label or '',
+                    'Owner Score': owner_score or 0,
+                    'Author': author or '',
+                    'Author URL': author_url or '',
                     'Images': row['images'],
                     'Added On': row['created_at']
                 })
             return results
+
+    def set_classification(self, url: str, label: str,
+                           broker_score: int = 0, owner_score: int = 0) -> bool:
+        """Persist owner/broker classification for a saved listing URL."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE properties SET owner_label = ?, owner_score = ?
+                WHERE url = ?
+            """, (label, int(broker_score) - int(owner_score), url))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def save_osint_result(self, target_type: str, target: str,
                           total_hits: int, total_checked: int,

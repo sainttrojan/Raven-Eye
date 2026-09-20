@@ -66,6 +66,15 @@ def is_valid_result(r, query):
                     return False
             except:
                 pass
+    # Madinaty scoping: radar queries target Madinaty, drop leaking cities.
+    try:
+        if "مدينتي" in (query or ""):
+            from core.listing_classifier import is_madinaty
+            geo = is_madinaty(r.title or "", r.description or "", r.url or "", strict=True)
+            if not geo["in_madinaty"]:
+                return False
+    except Exception:
+        pass
     return True
 
 def run_radar_iteration(query, target_chat_id=None):
@@ -91,11 +100,27 @@ def run_radar_iteration(query, target_chat_id=None):
     for r in new_results:
         price_text = r.price if r.price else "غير محدد"
         area_text = r.area if r.area else "غير محدد"
+        try:
+            from core.listing_classifier import classify
+            from core.phone_osint import find_in_database as _corr
+            phone_count = None
+            if getattr(r, "phone_number", None):
+                cres = _corr(r.phone_number)
+                phone_count = cres.get("count") if cres.get("ok") else None
+            cls = classify(r.title or "", r.description or "", r.url or "",
+                           phone_listing_count=phone_count,
+                           scraper_broker_type=getattr(r, "broker_type", None))
+            cls_line = {"owner": "👤 المعلن: مالك",
+                        "broker": "🏢 المعلن: بروكر محتمل",
+                        "unknown": "❓ المعلن: غير معروف"}[cls["label"]]
+        except Exception:
+            cls_line = ""
         msg = (
             f"🚨 <b>عقار جديد متاح!</b>\n\n"
             f"📌 <b>العنوان:</b> {escape_html(r.title)}\n"
             f"💰 <b>السعر:</b> {price_text}\n"
             f"📏 <b>المساحة:</b> {area_text}\n"
+            + (f"{cls_line}\n" if cls_line else "") +
             f"📝 <b>التفاصيل:</b> {escape_html(r.description)}\n\n"
             f"🔗 <a href='{r.url}'>رابط الإعلان</a>"
         )

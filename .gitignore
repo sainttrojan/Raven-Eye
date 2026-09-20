@@ -4,8 +4,12 @@ __pycache__/
 *.pyc
 .env
 fb_cookies.json
+fb_storage_state.json
+seen_properties.json
+subscribers.json
 *.xlsx
 *.csv
 config.json
 *.db
-.env
+dubizzle_test.html
+test_dubizzle.html
