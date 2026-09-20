@@ -420,9 +420,9 @@ def investigate_cmd(message):
         
         from core.broker_osint import scan_username, scan_email
         if kind == "email":
-            res = scan_email(value, modules=modules_arg, timeout=600 if is_deep else 300)
+            res = scan_email(value, modules=modules_arg, timeout=900 if is_deep else 300, cross_scan=is_deep, allow_loud=is_deep)
         else:
-            res = scan_username(value, modules=modules_arg, timeout=600 if is_deep else 300)
+            res = scan_username(value, modules=modules_arg, timeout=900 if is_deep else 300, cross_scan=is_deep, allow_loud=is_deep)
         if not res.get("ok"):
             bot.reply_to(message, f"فشل الفحص: {res.get('error')}")
             return
