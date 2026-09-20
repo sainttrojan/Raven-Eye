@@ -38,6 +38,12 @@ def generate_osint_excel(data: Dict[str, Any], kind: str, target: str, filename:
             if corr and corr.get("ok") and corr.get("count", 0) > 0:
                 df_corr = pd.DataFrame(corr.get("listings", []))
                 df_corr.to_excel(writer, sheet_name="Previous Listings", index=False)
+                
+            # Web Footprint (Google)
+            wres = data.get("web_footprint", {})
+            if wres and wres.get("ok") and wres.get("count", 0) > 0:
+                df_wres = pd.DataFrame(wres.get("items", []))
+                df_wres.to_excel(writer, sheet_name="Web Footprint", index=False)
 
 def generate_osint_pdf(data: Dict[str, Any], kind: str, target: str, filename: str):
     pdf = FPDF()
@@ -97,6 +103,20 @@ def generate_osint_pdf(data: Dict[str, Any], kind: str, target: str, filename: s
             for li in corr.get("listings", [])[:10]: # show top 10
                 title = str(li.get("Title", ""))[:50].encode('ascii', 'ignore').decode() # strip arabic/emoji for basic pdf
                 pdf.cell(0, 8, f"- {title} | {li.get('Price', '')}", ln=True)
+                
+        wres = data.get("web_footprint", {})
+        if wres and wres.get("ok") and wres.get("count", 0) > 0:
+            pdf.ln(5)
+            pdf.set_font("Arial", "B", 12)
+            pdf.cell(0, 10, f"Found {wres.get('count')} times in Google Search (Web Footprint):", ln=True)
+            pdf.set_font("Arial", size=10)
+            for it in wres.get("items", [])[:10]: # show top 10
+                title = str(it.get("Title", ""))[:50].encode('ascii', 'ignore').decode()
+                url = str(it.get("URL", ""))
+                pdf.cell(0, 8, f"- {title}", ln=True)
+                pdf.set_font("Arial", "U", 10)
+                pdf.cell(0, 8, f"  {url}", ln=True)
+                pdf.set_font("Arial", size=10)
 
     pdf.output(filename)
 

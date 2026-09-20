@@ -1,4 +1,5 @@
 user_search_state = {}
+user_osint_state = {}
 import os
 import json
 import time
@@ -414,11 +415,14 @@ def investigate_cmd(message):
             bot.reply_to(message, "النوع لازم يكون username أو email")
             return
         bot.reply_to(message, f"جاري فحص {value} عبر user-scanner... ⏳ (قد يستغرق دقيقة)")
+        is_deep = len(parts) > 3 and parts[3].lower() == "deep"
+        modules_arg = None if is_deep else "github,instagram,facebook,tiktok,twitter,snapchat,telegram"
+        
         from core.broker_osint import scan_username, scan_email
         if kind == "email":
-            res = scan_email(value, modules="github,instagram,facebook", timeout=300)
+            res = scan_email(value, modules=modules_arg, timeout=600 if is_deep else 300)
         else:
-            res = scan_username(value, modules="github,instagram,facebook", timeout=300)
+            res = scan_username(value, modules=modules_arg, timeout=600 if is_deep else 300)
         if not res.get("ok"):
             bot.reply_to(message, f"فشل الفحص: {res.get('error')}")
             return
@@ -492,6 +496,24 @@ def checkphone_cmd(message):
                     lines.append("مش موجود في إعلاناتنا المحفوظة (معلن جديد غالبا)")
         except Exception:
             pass
+            
+        with_web = len(parts) > 2 and parts[2].lower() == "with_web"
+        if with_web:
+            lines.append("جاري البحث في جوجل... 🔍")
+            try:
+                from core.phone_osint import web_footprint
+                from core.config import load_api_keys
+                wres = web_footprint(parts[1].strip(), load_api_keys(), max_pages=2)
+                res["web_footprint"] = wres
+                if wres.get("ok") and wres.get("count") > 0:
+                    lines.append(f"تم العثور على {wres['count']} نتيجة في جوجل!")
+                elif wres.get("ok"):
+                    lines.append("لا يوجد ظهور للرقم في جوجل.")
+                else:
+                    lines.append("تعذر البحث في جوجل.")
+            except Exception as we:
+                print("Web footprint error:", we)
+
         links = res.get("links", {})
         if links.get("whatsapp"):
             lines.append(f"واتساب: {links['whatsapp']}")
@@ -537,28 +559,66 @@ def checkphone_cmd(message):
 def investigate_ui_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     msg = bot.reply_to(message, "ابعت اليوزرنيم أو الإيميل بتاع السمسار اللي عايز تفحصه:\n(مثال: broker_name أو mail@example.com)")
-    bot.register_next_step_handler(msg, step_investigate_ui)
+    bot.register_next_step_handler(msg, step_investigate_target)
 
-def step_investigate_ui(message):
+def step_investigate_target(message):
     if not message.text: return
+    chat_id = str(message.chat.id)
     val = message.text.strip()
     kind = "email" if "@" in val else "username"
-    # Construct a dummy message and call the original investigate_cmd
-    message.text = f"/investigate {kind} {val}"
-    investigate_cmd(message)
+    user_osint_state[chat_id] = {"type": "investigate", "kind": kind, "target": val}
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("سريع (أشهر المواقع فقط - 30 ثانية)", callback_data="osint_inv_fast"),
+        types.InlineKeyboardButton("عميق (كل المواقع - قد يستغرق دقائق)", callback_data="osint_inv_deep")
+    )
+    bot.send_message(message.chat.id, "اختار نوع الفحص:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('osint_inv_'))
+def step_investigate_type(call):
+    chat_id = str(call.message.chat.id)
+    if chat_id not in user_osint_state: return
+    is_deep = call.data == "osint_inv_deep"
+    
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="جاري بدء الفحص... ⏳")
+    
+    msg = call.message
+    msg.text = f"/investigate {user_osint_state[chat_id]['kind']} {user_osint_state[chat_id]['target']} {'deep' if is_deep else 'fast'}"
+    threading.Thread(target=investigate_cmd, args=(msg,)).start()
+
 
 @bot.message_handler(func=lambda message: message.text in ['📱 فحص رقم (OSINT)'])
 def checkphone_ui_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
     msg = bot.reply_to(message, "ابعت رقم الموبايل اللي عايز تفحصه:\n(مثال: 01001234567)")
-    bot.register_next_step_handler(msg, step_checkphone_ui)
+    bot.register_next_step_handler(msg, step_checkphone_target)
 
-def step_checkphone_ui(message):
+def step_checkphone_target(message):
     if not message.text: return
+    chat_id = str(message.chat.id)
     val = message.text.strip()
-    # Construct a dummy message and call the original checkphone_cmd
-    message.text = f"/checkphone {val}"
-    checkphone_cmd(message)
+    user_osint_state[chat_id] = {"type": "checkphone", "target": val}
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("عادي (بيانات وحسابات فقط)", callback_data="osint_ph_normal"),
+        types.InlineKeyboardButton("شامل + جوجل (البحث عن الرقم فالويب)", callback_data="osint_ph_web")
+    )
+    bot.send_message(message.chat.id, "اختار نوع الفحص:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('osint_ph_'))
+def step_checkphone_type(call):
+    chat_id = str(call.message.chat.id)
+    if chat_id not in user_osint_state: return
+    with_web = call.data == "osint_ph_web"
+    
+    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text="جاري بدء الفحص... ⏳")
+    
+    msg = call.message
+    msg.text = f"/checkphone {user_osint_state[chat_id]['target']} {'with_web' if with_web else 'normal'}"
+    threading.Thread(target=checkphone_cmd, args=(msg,)).start()
+
 
 if __name__ == "__main__":
     print("Starting Telegram Bot and Radar...")
