@@ -160,7 +160,12 @@ def get_main_keyboard(chat_id):
         item_pause = types.KeyboardButton('⏸️ إيقاف الرادار')
         item_resume = types.KeyboardButton('▶️ تشغيل الرادار')
         item_restart = types.KeyboardButton('🔄 ريستارت')
-        markup.add(item_search, item_status, item_credits, item_pause, item_resume, item_restart)
+        item_broker = types.KeyboardButton('🕵️ فحص سمسار (OSINT)')
+        item_phone = types.KeyboardButton('📱 فحص رقم (OSINT)')
+        markup.row(item_search, item_status)
+        markup.row(item_broker, item_phone)
+        markup.row(item_credits, item_pause, item_resume)
+        markup.row(item_restart)
     else:
         markup.add(item_search)
         
@@ -479,6 +484,34 @@ def checkphone_cmd(message):
         print(f"CheckPhone Error: {e}")
         bot.reply_to(message, "حدث خطأ أثناء فحص الرقم.")
 
+
+
+@bot.message_handler(func=lambda message: message.text in ['🕵️ فحص سمسار (OSINT)'])
+def investigate_ui_btn(message):
+    if str(message.chat.id) != ADMIN_CHAT_ID: return
+    msg = bot.reply_to(message, "ابعت اليوزرنيم أو الإيميل بتاع السمسار اللي عايز تفحصه:\n(مثال: broker_name أو mail@example.com)")
+    bot.register_next_step_handler(msg, step_investigate_ui)
+
+def step_investigate_ui(message):
+    if not message.text: return
+    val = message.text.strip()
+    kind = "email" if "@" in val else "username"
+    # Construct a dummy message and call the original investigate_cmd
+    message.text = f"/investigate {kind} {val}"
+    investigate_cmd(message)
+
+@bot.message_handler(func=lambda message: message.text in ['📱 فحص رقم (OSINT)'])
+def checkphone_ui_btn(message):
+    if str(message.chat.id) != ADMIN_CHAT_ID: return
+    msg = bot.reply_to(message, "ابعت رقم الموبايل اللي عايز تفحصه:\n(مثال: 01001234567)")
+    bot.register_next_step_handler(msg, step_checkphone_ui)
+
+def step_checkphone_ui(message):
+    if not message.text: return
+    val = message.text.strip()
+    # Construct a dummy message and call the original checkphone_cmd
+    message.text = f"/checkphone {val}"
+    checkphone_cmd(message)
 
 if __name__ == "__main__":
     print("Starting Telegram Bot and Radar...")
