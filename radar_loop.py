@@ -394,6 +394,92 @@ def execute_custom_search(chat_id, state):
         print(f"Custom Search Error: {e}")
 
 
+@bot.message_handler(commands=['investigate'])
+def investigate_cmd(message):
+    """Usage: /investigate username johndoe  OR  /investigate email a@b.com"""
+    if str(message.chat.id) != ADMIN_CHAT_ID:
+        return
+    try:
+        parts = (message.text or "").split()
+        if len(parts) < 3:
+            bot.reply_to(message, "الاستخدام:\n/investigate username broker_eg\n/investigate email mail@example.com")
+            return
+        kind, value = parts[1].lower(), parts[2].strip()
+        if kind not in ("username", "email"):
+            bot.reply_to(message, "النوع لازم يكون username أو email")
+            return
+        bot.reply_to(message, f"جاري فحص {value} عبر user-scanner... ⏳ (قد يستغرق دقيقة)")
+        from core.broker_osint import scan_username, scan_email
+        if kind == "email":
+            res = scan_email(value, modules="github,instagram,facebook", timeout=300)
+        else:
+            res = scan_username(value, modules="github,instagram,facebook", timeout=300)
+        if not res.get("ok"):
+            bot.reply_to(message, f"فشل الفحص: {res.get('error')}")
+            return
+        hits = res.get("hits", [])
+        lines = [f"نتيجة فحص {value}: {res['total_hits']} مؤكدة من {res['total_checked']}"]
+        for h in hits[:10]:
+            lines.append(f"- {h.get('site_name')}: {h.get('url')}")
+        if len(hits) > 10:
+            lines.append(f"... و {len(hits) - 10} نتائج أخرى")
+        try:
+            from core.db import DatabaseManager
+            DatabaseManager().save_osint_result(kind, value, res["total_hits"],
+                                                res["total_checked"], hits, "")
+        except Exception:
+            pass
+        bot.reply_to(message, "\n".join(lines) or "لا توجد نتائج مؤكدة.")
+    except Exception as e:
+        print(f"Investigate Error: {e}")
+        bot.reply_to(message, "حدث خطأ أثناء الفحص.")
+
+
+@bot.message_handler(commands=['checkphone'])
+def checkphone_cmd(message):
+    """Usage: /checkphone 01001234567"""
+    if str(message.chat.id) != ADMIN_CHAT_ID:
+        return
+    try:
+        parts = (message.text or "").split()
+        if len(parts) < 2:
+            bot.reply_to(message, "الاستخدام:\n/checkphone 01001234567")
+            return
+        bot.reply_to(message, f"جاري فحص {parts[1]}... ⏳")
+        from core.phone_osint import full_check, find_in_database
+        res = full_check(parts[1].strip(), with_accounts=True, timeout=15)
+        if not res.get("ok"):
+            bot.reply_to(message, f"رقم غير صالح: {res.get('error')}")
+            return
+        lines = [f"الرقم: {res['e164']}",
+                 f"الشركة: {res.get('carrier')} | صالح: {'نعم' if res.get('valid') else 'لا'}"]
+        for a in res.get("accounts", []):
+            mark = "مسجل" if a.get("exists") else ("rate limit" if a.get("rate_limited") else "غير مسجل")
+            lines.append(f"- {a.get('domain')}: {mark}")
+        try:
+            corr = find_in_database(parts[1].strip())
+            if corr.get("ok"):
+                if corr["count"]:
+                    lines.append(f"ظهر في {corr['count']} إعلان محفوظ عندنا")
+                else:
+                    lines.append("مش موجود في إعلاناتنا المحفوظة (معلن جديد غالبا)")
+        except Exception:
+            pass
+        links = res.get("links", {})
+        if links.get("whatsapp"):
+            lines.append(f"واتساب: {links['whatsapp']}")
+        try:
+            from core.db import DatabaseManager
+            DatabaseManager().save_phone_osint(res["e164"], res.get("carrier", ""),
+                                               bool(res.get("valid")), res.get("accounts", []), "")
+        except Exception:
+            pass
+        bot.reply_to(message, "\n".join(lines))
+    except Exception as e:
+        print(f"CheckPhone Error: {e}")
+        bot.reply_to(message, "حدث خطأ أثناء فحص الرقم.")
+
+
 if __name__ == "__main__":
     print("Starting Telegram Bot and Radar...")
     threading.Thread(target=background_radar, daemon=True).start()

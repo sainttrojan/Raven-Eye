@@ -26,7 +26,13 @@ A fully integrated, interactive Telegram bot that acts as your personal real est
   - `/credits` : Instantly check your remaining ScraperAPI balance.
   - `/search <query>` : Manually trigger an immediate deep-search and get results pushed directly to Telegram.
 
-### 4. Dual-Process Deployment (Render)
+### 4. Advanced OSINT Capabilities
+- **Phone Number Profiling:** Validates and checks phone numbers against major platforms (Amazon, Instagram, Snapchat) using `ignorant` and `phonenumbers`.
+- **Digital Footprint:** Searches for phone number appearances across the web and cross-references with previously seen properties in the internal database.
+- **Broker Investigation:** Scans usernames and emails across various platforms (GitHub, Instagram, Facebook) using `user-scanner`.
+- **Telegram Integrations:** Added `/investigate` and `/checkphone` commands for quick on-the-go analysis.
+
+### 5. Dual-Process Deployment (Render)
 - Includes a custom `start.sh` script that spins up **both** the interactive Telegram background bot and the Streamlit web dashboard simultaneously within the same container.
 - Fully compatible with Render Web Services and easily integrated with Custom Domains (e.g., Namecheap).
 
