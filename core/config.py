@@ -66,6 +66,70 @@ def save_zenrows_key(key: str):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(data, f)
 
+def load_database_url() -> str:
+    """Supabase Postgres URL (empty = local SQLite)."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                url = json.load(f).get("database_url", "")
+                if url:
+                    return url
+        except: pass
+    return os.getenv("DATABASE_URL", "")
+
+def save_database_url(url: str):
+    data = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+        except: pass
+    data["database_url"] = url.strip()
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(data, f)
+
+def load_sheet_id() -> str:
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                sid = json.load(f).get("sheet_id", "")
+                if sid:
+                    return sid
+        except: pass
+    return os.getenv("SHEET_ID", "")
+
+def save_sheet_id(sheet_id: str):
+    data = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+        except: pass
+    data["sheet_id"] = sheet_id.strip()
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(data, f)
+
+def load_google_creds() -> str:
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                path = json.load(f).get("google_creds", "")
+                if path:
+                    return path
+        except: pass
+    return os.getenv("GOOGLE_CREDENTIALS_FILE", "")
+
+def save_google_creds(path: str):
+    data = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+        except: pass
+    data["google_creds"] = path.strip()
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(data, f)
+
 # ---------- Facebook Marketplace session ----------
 # One-time manual login via `venv/bin/python fb_login.py` saves the
 # authenticated storage state here; scrapers reuse it afterwards.

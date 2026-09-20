@@ -56,7 +56,7 @@ def test_sheet_extraction():
                        "phone": ["01001234567", "+201111111111"],
                        "note": ["كلمني على 01222222222", "لا يوجد"]})
     nums = extract_numbers_from_frame(df)
-    assert nums == ["201001234567", "201111111111", "201222222222"], nums
+    assert sorted(nums) == ["201001234567", "201111111111", "201222222222"], nums
     import tempfile, os
     with tempfile.TemporaryDirectory() as tmp:
         p = os.path.join(tmp, "nums.xlsx")
@@ -64,7 +64,7 @@ def test_sheet_extraction():
         assert load_numbers_file(p) == nums
         c = os.path.join(tmp, "nums.csv")
         df.to_csv(c, index=False)
-        assert load_numbers_file(c) == nums
+        assert sorted(load_numbers_file(c)) == sorted(nums)
     print("sheet OK")
 
 

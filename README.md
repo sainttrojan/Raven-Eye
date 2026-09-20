@@ -110,12 +110,26 @@ inter-message delays, a per-run cap, and dry-run mode enabled by default.
 - Automation violates WhatsApp's terms and risks number bans: send only
   to consenting lists with generous delays.
 
+### 11. Google Sheets lead sync (`core/sheets_sync.py`)
+One-way sync of the local database to a single Google Sheet, split into
+worksheets for distribution:
+- **Sale / Rent / Other** — listings auto-classified from their text,
+  each row with its save date (`Status` starts as `new`).
+- **OSINT** — broker and phone investigation results.
+- **WA Log** — every real WhatsApp send is logged automatically.
+URLs already in the sheet are never duplicated, and sync only appends —
+it never touches existing rows (assign leads freely).
+- One-time setup: Google Cloud service-account JSON key, share the
+  sheet with its `client_email` as Editor, then set the Sheet ID and
+  key path in Settings tab (or `SHEET_ID` / `GOOGLE_CREDENTIALS_FILE`).
+- Push listings and OSINT from the Saved tab after each run.
+
 ---
 
 ## Tech Stack
-- Python 3.14, Streamlit, pandas, SQLite
+- Python 3.14, Streamlit, pandas, SQLite (local) / Supabase Postgres (online)
 - Playwright + Chromium (Facebook sources)
-- BeautifulSoup4, httpx, trio
+- BeautifulSoup4, httpx, trio, psycopg (Postgres driver)
 - pyTelegramBotAPI (bot), python-dotenv (config)
 - External OSINT tools (cloned alongside this project):
   `user-scanner` (username/email), `ignorant` (phone accounts)
@@ -131,8 +145,8 @@ fb_login.py               One-time Facebook manual login
 wa_login.py               One-time WhatsApp QR login
 main.py                   Minimal CLI scraping example
 core/
-  config.py               Keys, FB session + group list storage
-  db.py                   SQLite: properties, broker_osint, phone_osint
+  config.py               Keys, FB session + group list + sheet/DB URLs storage
+  db.py                   SQLite local / Supabase Postgres online (auto-switch)
   parser.py               SmartParser (phone/price/area extraction)
   listing_classifier.py   Madinaty filter + owner/broker scorer
   broker_osint.py         user-scanner wrapper (email/username)
@@ -141,8 +155,9 @@ core/
   deep_investigate.py     All engines, one call
   fb_session.py           Facebook browser lifecycle + entry points
   browser.py              Playwright context helpers
-  wa_sender.py            WhatsApp Web sender + subscribers
+  wa_sender.py            WhatsApp Web sender + subscribers + sheet import
   report_generator.py     Excel/PDF OSINT reports
+  sheets_sync.py          Google Sheets split sync (Sale/Rent/OSINT/WA Log)
 scrapers/
   dubizzle.py             Dubizzle direct search
   google.py               Google site:-scoped search
@@ -150,6 +165,7 @@ scrapers/
   facebook_groups.py      Group search with post authors
 models/result.py          SearchResult dataclass (incl. author fields)
 start.sh                  Dual-process launcher (bot + dashboard)
+migrate_to_supabase.py    One-shot SQLite -> Supabase copy
 tests/                    Per-module test suites (run with project venv)
 ```
 
@@ -217,6 +233,8 @@ Each integration has a suite runnable with the project venv:
 ./venv/bin/python -m tests.test_facebook
 ./venv/bin/python -m tests.test_facebook_groups
 ./venv/bin/python -m tests.test_wa_sender
+./venv/bin/python -m tests.test_db_backends
+./venv/bin/python -m tests.test_sheets_sync
 ```
 Live checks (ignorant, user-scanner single-module probes) are included;
 they are passive existence checks and tolerate rate limits.
@@ -232,11 +250,34 @@ they are passive existence checks and tolerate rate limits.
 | `FB_GROUPS` | env / config.json / Settings | FB group list |
 | `WA_PROFILE_DIR` | env (default `wa_profile/`) | WhatsApp session |
 | `WA_SUBS_FILE` | env (default `wa_subscribers.json`) | WhatsApp subscribers |
+| `DATABASE_URL` | Streamlit secrets / env / config.json / Settings | Supabase Postgres (empty = local SQLite) |
+| `SHEET_ID` | env / config.json / Settings | Google Sheet for leads |
+| `GOOGLE_CREDENTIALS_FILE` | env / config.json / Settings | Service-account JSON key |
 | `USER_SCANNER_BIN` | env | user-scanner binary override |
 | `TELEGRAM_TOKEN`, `ADMIN_CHAT_ID` | `radar_loop.py` / env | Bot wiring |
 
-SQLite file `raven_eye.db` holds listings (with owner labels and authors),
+Local `raven_eye.db` holds listings (with owner labels and authors),
 OSINT results, and phone checks. `seen_properties.json` holds radar memory.
+
+## Online database (Supabase)
+
+Streamlit Cloud wipes local files on every reboot, so the cloud
+deployment uses Supabase Postgres while local runs keep SQLite — same
+code, automatic switch via `DATABASE_URL`:
+
+1. Create a free project at supabase.com, then copy the connection
+   string (Project Settings > Database > Connection string, postgres
+   user): `postgresql://postgres:PASSWORD@db.PROJECT.supabase.co:5432/postgres`
+2. Local: export it and copy existing data once:
+   ```bash
+   export DATABASE_URL="postgresql://..."
+   venv/bin/python migrate_to_supabase.py
+   ```
+3. Streamlit Cloud: paste the same string as `DATABASE_URL` in the app
+   Secrets (or in the Settings tab — Secrets survives reboots, the tab
+   does not seed them).
+4. Tables are created automatically with Row Level Security enabled and
+   no public grants, so only this server-side code can reach them.
 
 ---
 

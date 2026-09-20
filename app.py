@@ -68,7 +68,23 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["البحث المباشر",
 with tab3:
     st.subheader("إعدادات النظام (API Keys)")
 
-    st.markdown("#### 🔑 ZenRows API Key (محرك السحب الأساسي)")
+    st.markdown("#### قاعدة البيانات")
+    st.caption(f"الوضع الحالي: **{db.backend}**" +
+              (" (سحابية — مشتركة وثابتة)" if db.backend == "postgres"
+               else " (ملف محلي — على Streamlit Cloud بتتمسح مع كل ريستارت)"))
+    from core.config import load_database_url, save_database_url
+    if "database_url" not in st.session_state:
+        st.session_state["database_url"] = load_database_url()
+    db_url_input = st.text_input("DATABASE_URL (Supabase Postgres، فاضية = محلي):",
+                                 value=st.session_state["database_url"], type="password")
+    if st.button("حفظ رابط الداتابيز"):
+        st.session_state["database_url"] = db_url_input.strip()
+        save_database_url(db_url_input.strip())
+        st.success("تم الحفظ — اعمل ريستارت عشان يطبق.")
+    st.caption("على Streamlit Cloud حط DATABASE_URL في Secrets بدل الخانة دي.")
+
+    st.divider()
+    st.markdown("#### ZenRows API Key (محرك السحب الأساسي)")
     st.caption("ZenRows هو المحرك الأساسي للسحب من Dubizzle وجوجل — بيتخطى Cloudflare تلقائياً.")
     zenrows_input = st.text_input("ZenRows API Key:", value=st.session_state['zenrows_key'], type="password")
     if st.button("حفظ ZenRows Key"):
@@ -115,6 +131,24 @@ with tab3:
         if load_fb_groups():
             st.caption(f"المسجل حاليا: {len(load_fb_groups())} جروب.")
 
+    st.divider()
+    st.markdown("#### جوجل شيت (توزيع الليدز)")
+    st.caption("المزامنة بتدفع العقارات الجديدة للشيت بتاريخ إضافتها (عمود Status يبدأ new)، ومن غير تكرار. خطوة واحدة مطلوبة: حساب خدمة من Google Cloud ومشاركة الشيت مع إيميله كـ Editor.")
+    from core.config import load_sheet_id, save_sheet_id, load_google_creds, save_google_creds
+    if "sheet_id" not in st.session_state:
+        st.session_state["sheet_id"] = load_sheet_id()
+    if "google_creds" not in st.session_state:
+        st.session_state["google_creds"] = load_google_creds()
+    sheet_input = st.text_input("Sheet ID (من رابط الشيت):", value=st.session_state["sheet_id"])
+    creds_input = st.text_input("مسار ملف حساب الخدمة JSON:", value=st.session_state["google_creds"],
+                                placeholder="/home/ahmed/service-account.json")
+    if st.button("حفظ إعدادات الشيت"):
+        st.session_state["sheet_id"] = sheet_input.strip()
+        st.session_state["google_creds"] = creds_input.strip()
+        save_sheet_id(sheet_input.strip())
+        save_google_creds(creds_input.strip())
+        st.success("تم الحفظ.")
+
 
 with tab2:
     st.subheader("العقارات المحفوظة مسبقاً")
@@ -134,6 +168,32 @@ with tab2:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=False
             )
+
+        if st.button("مزامنة الجديد لجوجل شيت (بيع/إيجار)", use_container_width=True):
+            from core.sheets_sync import sync_database
+            from core.config import load_sheet_id, load_google_creds
+            with st.spinner("جاري المزامنة..."):
+                try:
+                    res = sync_database(db, load_sheet_id(), load_google_creds())
+                except Exception as e:
+                    res = {"ok": False, "error": str(e)}
+            if res.get("ok"):
+                st.success(f"تم: {res['pushed']} جديد ({res.get('by_sheet', {})})، {res['skipped']} موجود قبل كده.")
+            else:
+                st.error(res.get("error", "فشلت المزامنة"))
+
+        if st.button("مزامنة التحقيقات لجوجل شيت (OSINT)", use_container_width=True):
+            from core.sheets_sync import sync_osint
+            from core.config import load_sheet_id, load_google_creds
+            with st.spinner("جاري مزامنة التحقيقات..."):
+                try:
+                    res = sync_osint(db, load_sheet_id(), load_google_creds())
+                except Exception as e:
+                    res = {"ok": False, "error": str(e)}
+            if res.get("ok"):
+                st.success(f"تم دفع {res['pushed']} نتيجة تحقيق لورقة OSINT.")
+            else:
+                st.error(res.get("error", "فشلت المزامنة"))
     else:
         st.info("لا توجد عقارات محفوظة حتى الآن.")
 
@@ -812,3 +872,12 @@ with tab7:
                         "الحالة": "تم" if r.get("ok") else "فشل",
                         "ملاحظة": r.get("error", ""),
                     } for r in res["results"]]), use_container_width=True)
+                    if not res["dry_run"]:
+                        try:
+                            from core.sheets_sync import log_wa_send
+                            from core.config import load_sheet_id, load_google_creds
+                            log_wa_send(load_sheet_id(), load_google_creds(),
+                                        res["results"], wa_text.strip())
+                            st.caption("اتسجل في ورقة WA Log.")
+                        except Exception:
+                            pass

@@ -8,6 +8,9 @@ fb_storage_state.json
 wa_storage_state.json
 wa_profile/
 wa_subscribers.json
+*service-account*.json
+google-creds.json
+*-credentials.json
 seen_properties.json
 subscribers.json
 *.xlsx
