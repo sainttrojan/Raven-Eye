@@ -44,15 +44,20 @@ phone-number frequency in the local database:
 - Weak evidence returns `unknown` instead of guessing. Labels and scores
   are persisted per listing.
 
-### 4. Phone OSINT (`core/phone_osint.py`)
+### 4. Phone OSINT (`core/phone_osint.py`, `core/phone_sites/`)
 - Offline analysis via `phonenumbers`: validity, carrier
   (Vodafone/Orange/Etisalat/WE), region, line type. Instant, no network.
 - Account checks via `ignorant`: whether the number is registered on
   Amazon, Instagram and Snapchat (does not alert the target).
+- Pluggable website checks (`core/phone_sites/`): each site is one module
+  exposing `NAME`, `DOMAIN` and `check()`. First module is Facebook
+  account-recovery (E.164 plus national form, anonymous plus
+  session-authenticated paths). New sites need no engine changes.
 - Internal correlation: how many saved listings share the number, from
   which sources — the fastest broker detector in the system.
 - Web footprint: quoted-number Google search through the project's own
-  scraper (ScraperAPI credit applies).
+  scraper (ScraperAPI credit applies), plus an optional per-site
+  breakdown (facebook.com, dubizzle.com, olx, PropertyFinder, Aqarmap).
 - Manual investigation deep links: WhatsApp, Telegram, Truecaller, Google.
 
 ### 5. Broker OSINT via user-scanner (`core/broker_osint.py`)
@@ -79,7 +84,7 @@ several minutes.
   `/checkphone` (phone OSINT, normal or with web search).
 - Interactive buttons mirror the commands, including guided OSINT flows.
 
-### 8. Streamlit dashboard (`app.py`, 6 tabs)
+### 8. Streamlit dashboard (`app.py`, 7 tabs)
 1. Live search — all sources, Madinaty-only toggle, owner/broker filter,
    Excel export.
 2. Saved properties — database history with classification columns.
@@ -87,11 +92,23 @@ several minutes.
    Facebook group list.
 4. Broker investigation — username/email OSINT with profile links.
 5. Phone investigation — number analysis, account checks, DB correlation,
-   web footprint.
+   web footprint, per-site footprint.
 6. Deep investigation — every identifier across every engine.
+7. WhatsApp sender — see section 10.
 
 ### 9. Reports (`core/report_generator.py`)
 OSINT results export to Excel and PDF, used by the Telegram bot flows.
+
+### 10. WhatsApp sender (`core/wa_sender.py`, `wa_login.py`)
+Sends text plus optional image from your own number through WhatsApp Web
+(Playwright), with a subscriber list, Excel/CSV number import, random
+inter-message delays, a per-run cap, and dry-run mode enabled by default.
+- One-time login: `./venv/bin/python wa_login.py`, scan the QR, the
+  script auto-saves once chats appear. The full browser profile
+  (`wa_profile/`, IndexedDB included — the only persistence WhatsApp
+  honors) is reused afterwards. The phone must stay online.
+- Automation violates WhatsApp's terms and risks number bans: send only
+  to consenting lists with generous delays.
 
 ---
 
@@ -108,9 +125,10 @@ OSINT results export to Excel and PDF, used by the Telegram bot flows.
 
 ## Project Structure
 ```
-app.py                    Streamlit dashboard (6 tabs)
+app.py                    Streamlit dashboard (7 tabs)
 radar_loop.py             Telegram bot + background radar
 fb_login.py               One-time Facebook manual login
+wa_login.py               One-time WhatsApp QR login
 main.py                   Minimal CLI scraping example
 core/
   config.py               Keys, FB session + group list storage
@@ -119,9 +137,11 @@ core/
   listing_classifier.py   Madinaty filter + owner/broker scorer
   broker_osint.py         user-scanner wrapper (email/username)
   phone_osint.py          phonenumbers + ignorant + correlation + footprint
+  phone_sites/            Pluggable phone website checks (facebook first)
   deep_investigate.py     All engines, one call
   fb_session.py           Facebook browser lifecycle + entry points
   browser.py              Playwright context helpers
+  wa_sender.py            WhatsApp Web sender + subscribers
   report_generator.py     Excel/PDF OSINT reports
 scrapers/
   dubizzle.py             Dubizzle direct search
@@ -164,12 +184,20 @@ listed in `requirements.txt`.
 ```bash
 ./venv/bin/python fb_login.py
 ```
-Log in inside the opened browser window, press ENTER. The session is
-stored locally as `fb_storage_state.json`. Then add your Madinaty groups
-(full URLs, one per line) in Settings tab, section "Facebook groups".
-The account must be a member of private groups to read them.
+Log in inside the opened browser window; the script saves the session
+automatically once chats appear (`fb_storage_state.json`). Then add
+your Madinaty groups (full URLs, one per line) in Settings tab, section
+"Facebook groups". The account must be a member of private groups to
+read them.
 
-### 5. Run
+### 5. WhatsApp session (one time, for the sender tab)
+```bash
+./venv/bin/python wa_login.py
+```
+Scan the QR with your phone and wait — the script saves automatically
+once chats appear (full browser profile in `wa_profile/`).
+
+### 6. Run
 ```bash
 bash start.sh
 # bot runs in background, dashboard on http://localhost:8501
@@ -184,9 +212,11 @@ Each integration has a suite runnable with the project venv:
 ./venv/bin/python -m tests.test_listing_classifier
 ./venv/bin/python -m tests.test_broker_osint
 ./venv/bin/python -m tests.test_phone_osint
+./venv/bin/python -m tests.test_phone_sites
 ./venv/bin/python -m tests.test_deep_investigate
 ./venv/bin/python -m tests.test_facebook
 ./venv/bin/python -m tests.test_facebook_groups
+./venv/bin/python -m tests.test_wa_sender
 ```
 Live checks (ignorant, user-scanner single-module probes) are included;
 they are passive existence checks and tolerate rate limits.
@@ -200,6 +230,8 @@ they are passive existence checks and tolerate rate limits.
 | `SCRAPER_API_KEYS` | env / config.json / Settings | Google web footprint |
 | `FB_STORAGE_FILE` | env (default `fb_storage_state.json`) | FB session |
 | `FB_GROUPS` | env / config.json / Settings | FB group list |
+| `WA_PROFILE_DIR` | env (default `wa_profile/`) | WhatsApp session |
+| `WA_SUBS_FILE` | env (default `wa_subscribers.json`) | WhatsApp subscribers |
 | `USER_SCANNER_BIN` | env | user-scanner binary override |
 | `TELEGRAM_TOKEN`, `ADMIN_CHAT_ID` | `radar_loop.py` / env | Bot wiring |
 

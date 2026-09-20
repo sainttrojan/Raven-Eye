@@ -5,6 +5,9 @@ __pycache__/
 .env
 fb_cookies.json
 fb_storage_state.json
+wa_storage_state.json
+wa_profile/
+wa_subscribers.json
 seen_properties.json
 subscribers.json
 *.xlsx

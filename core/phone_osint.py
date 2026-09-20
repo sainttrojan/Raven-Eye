@@ -126,10 +126,47 @@ def check_accounts(raw: str, timeout: int = 15) -> Dict[str, Any]:
     except Exception as e:
         return {"ok": False, "error": f"فشل فحص الحسابات: {e}"}
 
+    # Raven-Eye's own phone-site modules (facebook, ...) run on asyncio.
+    try:
+        import asyncio as _asyncio
+        from core.phone_sites import module_list as _phone_modules
+
+        async def _main2():
+            out2: List[Dict[str, Any]] = []
+
+            async def _run_mod(mod):
+                try:
+                    await mod.check(norm["e164"], norm["national"],
+                                    norm["country_code"], client2, out2)
+                except Exception as e:
+                    out2.append({"name": getattr(mod, "NAME", "?"),
+                                 "domain": getattr(mod, "DOMAIN", ""),
+                                 "exists": False, "rate_limited": True,
+                                 "error": str(e)[:120]})
+
+            client2 = httpx.AsyncClient(timeout=timeout)
+            try:
+                async with _asyncio.TaskGroup() as tg:
+                    for mod in _phone_modules():
+                        tg.create_task(_run_mod(mod))
+            except Exception:
+                pass
+            finally:
+                await client2.aclose()
+            return out2
+
+        try:
+            raw_out = list(raw_out) + _asyncio.run(_main2())
+        except Exception:
+            pass
+    except Exception:
+        pass
+
     results = [{"name": d.get("name", ""), "domain": d.get("domain", ""),
                 "exists": bool(d.get("exists", False)),
-                "rate_limited": bool(d.get("rateLimit", False))}
+                "rate_limited": bool(d.get("rateLimit", d.get("rate_limited", False)))}
                for d in raw_out]
+    results.sort(key=lambda d: d.get("name", ""))
     return {"ok": True, "e164": norm["e164"], "results": results,
             "hits": [r for r in results if r["exists"]]}
 
@@ -227,3 +264,49 @@ def web_footprint(raw: str, api_keys, max_pages: int = 2) -> Dict[str, Any]:
         return {"ok": True, "e164": norm["e164"], "count": len(items), "items": items}
     except Exception as e:
         return {"ok": False, "error": f"فشل البحث: {e}"}
+
+
+# Sites worth checking individually for number mentions (Egypt-focused).
+FOOTPRINT_SITES = ["facebook.com", "dubizzle.com", "olx.com.eg",
+                   "propertyfinder.eg", "aqarmap.com"]
+
+
+def web_footprint_sites(raw: str, api_keys,
+                        sites: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Per-site web footprint: where exactly does the number appear?
+
+    One quoted search per site (1 page each — each costs ScraperAPI
+    credit). Returns {"ok", "e164", "sites": {site: {"count", "items", "error"}}}.
+    This is the honest website-by-website phone search: public mentions
+    per platform, complementing registration checks.
+    """
+    import asyncio
+    norm = normalize(raw)
+    if not norm["ok"]:
+        return norm
+    if not api_keys:
+        return {"ok": False, "error": "لا توجد مفاتيح ScraperAPI"}
+    try:
+        from scrapers.google import GoogleScraper
+    except ImportError as e:
+        return {"ok": False, "error": f"تعذر تحميل سكرابر جوجل: {e}"}
+    keys = api_keys if isinstance(api_keys, list) else [api_keys]
+    out: Dict[str, Any] = {}
+    try:
+        scraper = GoogleScraper(keys)
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            for site in (sites or FOOTPRINT_SITES):
+                try:
+                    res = loop.run_until_complete(
+                        scraper.search(f'"{norm["e164"]}" site:{site}', "", max_pages=1))
+                    items = [r.to_dict() for r in (res or [])]
+                    out[site] = {"count": len(items), "items": items[:10], "error": ""}
+                except Exception as e:
+                    out[site] = {"count": 0, "items": [], "error": str(e)[:120]}
+        finally:
+            loop.close()
+    except Exception as e:
+        return {"ok": False, "error": f"فشل البحث: {e}"}
+    return {"ok": True, "e164": norm["e164"], "sites": out}

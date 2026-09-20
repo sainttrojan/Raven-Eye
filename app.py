@@ -17,6 +17,7 @@ from core.broker_osint import (
 from core.phone_osint import full_check as phone_full_check
 from core.phone_osint import find_in_database as phone_find_in_db
 from core.phone_osint import web_footprint as phone_web_footprint
+from core.phone_osint import web_footprint_sites as phone_web_footprint_sites
 from core.deep_investigate import investigate as deep_investigate
 
 st.set_page_config(page_title="Raven Eye System", page_icon="🏢", layout="wide")
@@ -62,7 +63,7 @@ from core.config import load_zenrows_key, save_zenrows_key
 if 'zenrows_key' not in st.session_state:
     st.session_state['zenrows_key'] = load_zenrows_key()
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["البحث المباشر", "العقارات المحفوظة", "الإعدادات", "التحقيق في المعلن", "تحقيق برقم الموبايل", "تحقيق شامل"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["البحث المباشر", "العقارات المحفوظة", "الإعدادات", "التحقيق في المعلن", "تحقيق برقم الموبايل", "تحقيق شامل", "واتساب سندر"])
 
 with tab3:
     st.subheader("إعدادات النظام (API Keys)")
@@ -499,8 +500,9 @@ with tab5:
 
     phone_input = st.text_input("رقم الموبايل", placeholder="01xxxxxxxxx أو +201xxxxxxxxx")
     phone_url = st.text_input("رابط الإعلان المرتبط (اختياري)", placeholder="https://...")
-    with_accounts = st.checkbox("فحص الحسابات المرتبطة (ignorant) — قد يستغرق ~20 ثانية", value=True)
+    with_accounts = st.checkbox("فحص الحسابات المرتبطة (ignorant + فيسبوك) — قد يستغرق ~30 ثانية", value=True)
     with_web = st.checkbox("بصمة الويب: دور على الرقم في جوجل (يستهلك من رصيد ScraperAPI)", value=True)
+    with_web_sites = st.checkbox("بصمة لكل موقع: فيسبوك/دوبيزل/أولكس... (5 عمليات بحث)", value=False)
 
     if st.button("افحص الرقم", use_container_width=True):
         if not phone_input.strip():
@@ -588,6 +590,34 @@ with tab5:
                                 st.dataframe(df_w, use_container_width=True)
                         else:
                             st.warning(wres.get("error", "تعذر البحث"))
+
+                    if with_web_sites:
+                        st.divider()
+                        st.subheader("الرقم مذكور فين؟ (لكل موقع)")
+                        with st.spinner("جاري البحث في كل موقع..."):
+                            try:
+                                sres = phone_web_footprint_sites(
+                                    phone_input.strip(),
+                                    st.session_state.get("api_keys", []))
+                            except Exception as e:
+                                sres = {"ok": False, "error": str(e)}
+                        if sres.get("ok"):
+                            rows = []
+                            for site, sd in sres["sites"].items():
+                                if sd.get("error"):
+                                    rows.append({"الموقع": site, "الظهور": "خطأ",
+                                                 "مثال": sd["error"]})
+                                elif sd["count"]:
+                                    first = sd["items"][0]
+                                    rows.append({"الموقع": site,
+                                                 "الظهور": f"{sd['count']} نتيجة",
+                                                 "مثال": first.get("Title", "")})
+                                else:
+                                    rows.append({"الموقع": site, "الظهور": "لا يوجد",
+                                                 "مثال": ""})
+                            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                        else:
+                            st.warning(sres.get("error", "تعذر البحث"))
 
                     links = pres.get("links", {})
                     if links:
@@ -689,3 +719,96 @@ with tab6:
                                 "لينك البروفايل": extract_profile_link(h),
                                 "تفاصيل": extra_summary(h),
                             } for h in ur["hits"]]), use_container_width=True)
+
+with tab7:
+    st.subheader("واتساب سندر (من رقمك الشخصي)")
+    st.caption("إرسال عبر WhatsApp Web بجلسة موبايلك — نفس فكرة جلسة فيسبوك.")
+    st.warning("تنبيه: الإرسال الآلي مخالف لشروط واتساب وقد يعرض الرقم للحظر. أرسل لقوايم موافقة وبفواصل زمنية.")
+
+    from core.wa_sender import (
+        build_send_url,
+        extract_numbers_from_frame as wa_numbers_from_frame,
+        load_subscribers as wa_load_subs,
+        parse_targets as wa_parse_targets,
+        render_listing as wa_render_listing,
+        save_subscribers as wa_save_subs,
+        send_messages as wa_send,
+        wa_session_available,
+    )
+
+    if wa_session_available():
+        st.success("جلسة واتساب موجودة.")
+    else:
+        st.warning("مفيش جلسة واتساب. من التيرمينال مرة واحدة:")
+        st.code("cd ~/Desktop/Raven-Eye && ./venv/bin/python wa_login.py")
+
+    subs = wa_load_subs()
+    st.caption(f"المشتركين المحفوظين: {len(subs)}")
+    use_subs = st.checkbox("إرسال للمشتركين المحفوظين", value=bool(subs))
+    extra_numbers = st.text_area("أرقام إضافية (أي صيغة مصرية، رقم في كل سطر)",
+                                 height=80, placeholder="01001234567")
+    wa_sheet = st.file_uploader("أو ارفع شيت بالأرقام (Excel/CSV — الأرقام تتسحب من كل الخلايا)",
+                                type=["xlsx", "xls", "csv"])
+    sheet_numbers: list = []
+    if wa_sheet is not None:
+        try:
+            import pandas as pd
+            if wa_sheet.name.lower().endswith(".csv"):
+                _df = pd.read_csv(wa_sheet, dtype=str, keep_default_na=False)
+            else:
+                _df = pd.read_excel(wa_sheet, dtype=str)
+            sheet_numbers = wa_numbers_from_frame(_df)
+            st.success(f"اتلقط {len(sheet_numbers)} رقم من الشيت.")
+        except Exception as e:
+            st.error(f"تعذر قراءة الشيت: {e}")
+    wa_text = st.text_area("نص الرسالة", height=120,
+                           placeholder="شقة 120م مدينتي B7 من المالك - 5 مليون...")
+    wa_image = st.file_uploader("صورة مرفقة (اختياري)", type=["jpg", "jpeg", "png"])
+    wa_delay = st.slider("فاصل بين الرسائل (ثواني)", 5, 60, 12)
+    wa_dry = st.checkbox("وضع تجريبي dry-run (لا يرسل شيئا فعليا)", value=True)
+
+    col_wa1, col_wa2 = st.columns(2)
+    with col_wa1:
+        if st.button("حفظ الأرقام كمشتركين"):
+            new_subs = sorted(set(subs) | set(wa_parse_targets(extra_numbers or ""))
+                              | set(sheet_numbers))
+            wa_save_subs(new_subs)
+            st.success(f"تم حفظ {len(new_subs)} مشترك. حدث الصفحة.")
+    with col_wa2:
+        do_send = st.button("إرسال واتساب", use_container_width=True)
+
+    if do_send:
+        targets = list(subs) if use_subs else []
+        targets += wa_parse_targets(extra_numbers or "")
+        targets += sheet_numbers
+        targets = sorted(set(targets))[:30]
+        if not targets:
+            st.error("مفيش أرقام صالحة.")
+        elif not wa_text.strip() and not wa_image:
+            st.error("الرسالة فاضية.")
+        else:
+            img_path = None
+            if wa_image:
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                    tmp.write(wa_image.read())
+                    img_path = tmp.name
+            with st.spinner(f"جاري الإرسال لـ {len(targets)} رقم... (متقفلش التاب)"):
+                try:
+                    res = wa_send(targets, wa_text.strip(), img_path,
+                                  delay=(max(5, wa_delay - 3), wa_delay + 3),
+                                  dry_run=wa_dry)
+                except Exception as e:
+                    st.error(f"فشل الإرسال: {e}")
+                    res = None
+            if res:
+                if res.get("error"):
+                    st.error(res["error"])
+                else:
+                    mode = "تجريبي (متبعتش حاجة)" if res["dry_run"] else "فعلي"
+                    st.success(f"وضع {mode}: نجح {res['sent']} / فشل {res['failed']}")
+                    st.dataframe(pd.DataFrame([{
+                        "الرقم": r.get("target", ""),
+                        "الحالة": "تم" if r.get("ok") else "فشل",
+                        "ملاحظة": r.get("error", ""),
+                    } for r in res["results"]]), use_container_width=True)
