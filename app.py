@@ -56,21 +56,41 @@ if "api_keys" not in st.session_state:
 
 # Default API Key in session state
 if 'scraper_api_key' not in st.session_state:
-    st.session_state['scraper_api_key'] = "06ede5861ed79f12ad4ed6f275ce0038"
+    st.session_state['scraper_api_key'] = ""
+
+from core.config import load_zenrows_key, save_zenrows_key
+if 'zenrows_key' not in st.session_state:
+    st.session_state['zenrows_key'] = load_zenrows_key()
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["البحث المباشر", "العقارات المحفوظة", "الإعدادات", "التحقيق في المعلن", "تحقيق برقم الموبايل", "تحقيق شامل"])
 
 with tab3:
     st.subheader("إعدادات النظام (API Keys)")
-    keys_text = st.text_area("أدخل مفاتيح ScraperAPI (مفتاح واحد في كل سطر):", value="\n".join(st.session_state['api_keys']), height=150)
-    if st.button("حفظ الإعدادات"):
+
+    st.markdown("#### 🔑 ZenRows API Key (محرك السحب الأساسي)")
+    st.caption("ZenRows هو المحرك الأساسي للسحب من Dubizzle وجوجل — بيتخطى Cloudflare تلقائياً.")
+    zenrows_input = st.text_input("ZenRows API Key:", value=st.session_state['zenrows_key'], type="password")
+    if st.button("حفظ ZenRows Key"):
+        if zenrows_input.strip():
+            st.session_state['zenrows_key'] = zenrows_input.strip()
+            save_zenrows_key(zenrows_input.strip())
+            st.success("✅ تم حفظ ZenRows Key!")
+        else:
+            st.error("ادخل الـ Key الأول.")
+
+    st.divider()
+    st.markdown("#### 🔑 ScraperAPI Keys (للبصمة الرقمية على جوجل فقط)")
+    st.caption("مش مطلوبة للسحب الأساسي — بس لو عايز ميزة 'بصمة الويب' لأرقام الموبايل.")
+    keys_text = st.text_area("مفاتيح ScraperAPI (مفتاح واحد في كل سطر):", value="\n".join(st.session_state['api_keys']), height=100)
+    if st.button("حفظ ScraperAPI Keys"):
         new_keys = [k.strip() for k in keys_text.split('\n') if k.strip()]
         if new_keys:
             st.session_state['api_keys'] = new_keys
             save_api_keys(new_keys)
-            st.success("تم تحديث وحفظ مفاتيح الـ API بنجاح!")
+            st.success("تم تحديث مفاتيح ScraperAPI!")
         else:
             st.error("يجب إدخال مفتاح واحد على الأقل.")
+
 
 with tab2:
     st.subheader("العقارات المحفوظة مسبقاً")

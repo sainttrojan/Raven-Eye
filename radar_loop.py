@@ -113,17 +113,22 @@ def run_radar_iteration(query, target_chat_id=None):
     return len(new_results)
 
 def check_credits_internal():
-    total_rem = 0
-    for key in load_api_keys():
-        try:
-            resp = requests.get(f"http://api.scraperapi.com/account?api_key={key}", timeout=5)
+    """Check remaining ZenRows credits (primary scraping engine)."""
+    try:
+        from core.config import load_zenrows_key
+        key = load_zenrows_key()
+        resp = requests.get(
+            f"https://api.zenrows.com/v1/credits",
+            params={"apikey": key},
+            timeout=10
+        )
+        if resp.status_code == 200:
             data = resp.json()
-            used = data.get('requestCount', 0)
-            limit = data.get('requestLimit', 0)
-            total_rem += max(0, limit - used)
-        except:
-            pass
-    return total_rem
+            return data.get("remaining", 9999)
+    except Exception as e:
+        print(f"ZenRows credits check failed: {e}")
+    return 9999  # assume credits available if we can't check
+
 
 def background_radar():
     global radar_is_running
@@ -214,34 +219,33 @@ def restart_btn(message):
 @bot.message_handler(func=lambda message: message.text in ['💰 الرصيد', '/credits'])
 def credits_btn(message):
     if str(message.chat.id) != ADMIN_CHAT_ID: return
-    bot.reply_to(message, "جاري فحص جميع الحسابات... ⏳")
+    bot.reply_to(message, "جاري فحص رصيد ZenRows... ⏳")
     try:
-        total_used = 0
-        total_limit = 0
-        total_rem = 0
-        for key in load_api_keys():
-            try:
-                resp = requests.get(f"http://api.scraperapi.com/account?api_key={key}", timeout=5)
-                data = resp.json()
-                used = data.get('requestCount', 0)
-                limit = data.get('requestLimit', 0)
-                total_used += used
-                total_limit += limit
-                total_rem += max(0, limit - used)
-            except: pass
-            
-        lines = [
-            "📊 <b>إجمالي رصيد جميع الحسابات</b>",
-            "",
-            f"🔹 المستخدم الكلي: {total_used}",
-            f"🔹 المتبقي الكلي: <b>{total_rem}</b>",
-            f"🔹 الحد الأقصى الكلي: {total_limit}"
-        ]
-        text = "\n".join(lines)
-        
-        bot.reply_to(message, text, parse_mode="HTML")
+        from core.config import load_zenrows_key
+        key = load_zenrows_key()
+        resp = requests.get(
+            "https://api.zenrows.com/v1/credits",
+            params={"apikey": key},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            remaining = data.get("remaining", "غير معروف")
+            used      = data.get("used", "غير معروف")
+            total     = data.get("total", "غير معروف")
+            lines = [
+                "📊 <b>رصيد ZenRows (محرك السحب الأساسي)</b>",
+                "",
+                f"✅ المتبقي: <b>{remaining}</b> طلب",
+                f"🔹 المستخدم: {used}",
+                f"🔹 الإجمالي: {total}",
+            ]
+        else:
+            lines = [f"⚠️ تعذر جلب الرصيد — كود: {resp.status_code}", resp.text[:100]]
+        bot.reply_to(message, "\n".join(lines), parse_mode="HTML")
     except Exception as e:
-        bot.reply_to(message, "حدث خطأ أثناء جلب الرصيد.")
+        bot.reply_to(message, f"حدث خطأ أثناء جلب الرصيد: {e}")
+
 
 
 @bot.message_handler(func=lambda message: message.text in ['🔍 بحث جديد', '/search'])
