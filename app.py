@@ -177,16 +177,21 @@ with tab1:
             else:
                 scraper = GoogleScraper(st.session_state['api_keys'])
                 return await scraper.search(final_query, time_filter, max_pages=max_pages)
-            
+
+        def run_in_thread():
+            """Run async fetch in a clean thread to avoid Streamlit event loop conflicts."""
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(asyncio.run, fetch_results())
+                return future.result(timeout=300)
+
         with st.spinner(f"جاري سحب البيانات من {max_pages} صفحات... برجاء الانتظار"):
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                results = loop.run_until_complete(fetch_results())
-                
+                results = run_in_thread()
+
                 if results:
                     st.success(f"تم استخراج {len(results)} نتيجة بنجاح.")
-                    
+
                     data = []
                     new_count = 0
                     for result in results:
@@ -199,20 +204,20 @@ with tab1:
                             'الرابط': res_dict['URL'],
                             'الوصف': res_dict['Description']
                         })
-                        
+
                         # Save to database
                         inserted = db.insert_property(res_dict)
                         if inserted:
                             new_count += 1
-                            
+
                     st.info(f"تم إضافة {new_count} عقار جديد لقاعدة البيانات.")
-                        
+
                     df = pd.DataFrame(data)
                     st.dataframe(df, use_container_width=True)
-                    
+
                     output_file = 'results_app.xlsx'
                     df.to_excel(output_file, index=False)
-                    
+
                     with open(output_file, "rb") as file:
                         st.download_button(
                             label="تحميل التقرير (Excel)",
@@ -225,6 +230,10 @@ with tab1:
                     st.warning("لم يتم العثور على بيانات مطابقة.")
             except Exception as e:
                 st.error(f"حدث خطأ في النظام: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+
 
 with tab4:
     st.subheader("التحقيق في المعلن (user-scanner)")
