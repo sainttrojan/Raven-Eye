@@ -130,7 +130,7 @@ scrapers/
   facebook_groups.py      Group search with post authors
 models/result.py          SearchResult dataclass (incl. author fields)
 start.sh                  Dual-process launcher (bot + dashboard)
-test_*.py                 Per-module test suites (run with project venv)
+tests/                    Per-module test suites (run with project venv)
 ```
 
 ---
@@ -181,12 +181,12 @@ bash start.sh
 ## Testing
 Each integration has a suite runnable with the project venv:
 ```bash
-./venv/bin/python test_listing_classifier.py
-./venv/bin/python test_broker_osint.py
-./venv/bin/python test_phone_osint.py
-./venv/bin/python test_deep_investigate.py
-./venv/bin/python test_facebook.py
-./venv/bin/python test_facebook_groups.py
+./venv/bin/python -m tests.test_listing_classifier
+./venv/bin/python -m tests.test_broker_osint
+./venv/bin/python -m tests.test_phone_osint
+./venv/bin/python -m tests.test_deep_investigate
+./venv/bin/python -m tests.test_facebook
+./venv/bin/python -m tests.test_facebook_groups
 ```
 Live checks (ignorant, user-scanner single-module probes) are included;
 they are passive existence checks and tolerate rate limits.
