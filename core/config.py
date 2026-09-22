@@ -115,9 +115,10 @@ def load_google_creds() -> str:
             with open(CONFIG_FILE, 'r') as f:
                 path = json.load(f).get("google_creds", "")
                 if path:
-                    return path
+                    return os.path.expanduser(os.path.expandvars(path))
         except: pass
-    return os.getenv("GOOGLE_CREDENTIALS_FILE", "")
+    return os.path.expanduser(os.path.expandvars(
+        os.getenv("GOOGLE_CREDENTIALS_FILE", "")))
 
 def save_google_creds(path: str):
     data = {}

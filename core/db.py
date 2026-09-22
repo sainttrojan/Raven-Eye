@@ -154,6 +154,13 @@ class DatabaseManager:
                     accounts_json TEXT, property_url TEXT, {ts}
                 )
             """)
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS wa_log (
+                    {id_col},
+                    target TEXT, status TEXT, note TEXT,
+                    message TEXT, mode TEXT DEFAULT 'live', {ts}
+                )
+            """)
             # Upgrades for pre-existing SQLite files.
             self._add_column(cur, "properties", "owner_label TEXT DEFAULT ''")
             self._add_column(cur, "properties", "owner_score INTEGER DEFAULT 0")
@@ -161,7 +168,7 @@ class DatabaseManager:
             self._add_column(cur, "properties", "author_url TEXT DEFAULT ''")
             if self.use_pg:
                 # Block Data API access; owner connection is unaffected.
-                for t in ("properties", "broker_osint", "phone_osint"):
+                for t in ("properties", "broker_osint", "phone_osint", "wa_log"):
                     cur.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
             conn.commit()
 
@@ -368,3 +375,38 @@ class DatabaseManager:
                 "Broker Type": r.get("broker_type"),
                 "Added On": r.get("created_at"),
             } for r in rows]
+
+    # ---------- whatsapp log ----------
+
+    def log_wa_batch(self, results: List[Dict[str, Any]], message: str,
+                     mode: str = "live") -> int:
+        """Persist one WhatsApp run locally. Returns rows written."""
+        if not results:
+            return 0
+        snippet = (message or "")[:500]
+        with self._connect() as conn:
+            cur = conn.cursor()
+            for r in results:
+                self._execute(cur, """
+                    INSERT INTO wa_log (target, status, note, message, mode)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (str(r.get("target", "")),
+                      "sent" if r.get("ok") else "failed",
+                      str(r.get("error", "") or ""), snippet, mode))
+            conn.commit()
+            return len(results)
+
+    def get_wa_log(self, limit: int = 100) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            cur = conn.cursor()
+            self._execute(cur,
+                          "SELECT * FROM wa_log ORDER BY created_at DESC LIMIT ?",
+                          (int(limit),))
+            return [{
+                "Date": r.get("created_at"),
+                "Target": r.get("target"),
+                "Status": r.get("status"),
+                "Mode": r.get("mode"),
+                "Note": r.get("note"),
+                "Message": r.get("message"),
+            } for r in cur.fetchall()]

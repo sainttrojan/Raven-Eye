@@ -105,8 +105,41 @@ def existing_urls(ws) -> set:
     return {r[idx] for r in values[1:] if len(r) > idx and r[idx]}
 
 
+def _row_updates(ws, seen: Dict[str, int], buckets: Dict[str, List[List[str]]],
+                 name: str) -> tuple:
+    """Append missing rows AND update changed A-K cells in place.
+
+    Manual columns past K (assignee etc.) are never touched.
+    Returns (appended_count, updated_count).
+    """
+    rows = buckets.get(name, [])
+    fresh = [r for r in rows if r[HEADERS.index("URL")] not in seen]
+    appended = updated = 0
+    if fresh:
+        ws.append_rows(fresh, value_input_option="USER_ENTERED")
+        appended = len(fresh)
+    current = {r[HEADERS.index("URL")]: (i + 2, r)
+               for i, r in enumerate(ws.get_all_values()[1:])
+               if len(r) > HEADERS.index("URL")}
+    for r in rows:
+        url = r[HEADERS.index("URL")]
+        if url in current and url not in {f[HEADERS.index("URL")] for f in fresh}:
+            idx, old = current[url]
+            old = (old + [""] * len(HEADERS))[:len(HEADERS)]
+            if old != r:
+                ws.update(f"A{idx}:K{idx}", [r],
+                          value_input_option="USER_ENTERED")
+                updated += 1
+    return appended, updated
+
+
 def sync_database(db, sheet_id: str, creds_file: str) -> Dict[str, Any]:
-    """Append new listings to Sale/Rent/Other sheets. Returns counts."""
+    """Mirror the whole table into Sale/Rent/Other sheets.
+
+    Every run: missing URLs appended, changed rows updated in place
+    (columns A-K only — manual distribution columns are preserved),
+    nothing duplicated, nothing deleted.
+    """
     if not sheet_id or not sheet_id.strip():
         return {"ok": False, "error": "مفيش Sheet ID متسجل (تاب الإعدادات)"}
     if not creds_file or not os.path.exists(creds_file):
@@ -115,31 +148,33 @@ def sync_database(db, sheet_id: str, creds_file: str) -> Dict[str, Any]:
     try:
         client = _client(creds_file)
         sid = sheet_id.strip()
-        seen: set = set()
-        sheets = {}
-        for name in (SHEET_SALE, SHEET_RENT, SHEET_OTHER):
-            ws = _worksheet(client, sid, name, HEADERS)
-            sheets[name] = ws
-            seen |= existing_urls(ws)
         props = db.get_all_properties()
         buckets: Dict[str, List[List[str]]] = {SHEET_SALE: [], SHEET_RENT: [],
                                                SHEET_OTHER: []}
-        skipped = 0
         for p in props:
-            if (p.get("URL") or "") in seen:
-                skipped += 1
-                continue
             t = lead_type(p)
             buckets[SHEET_RENT if t == "rent" else
                     SHEET_SALE if t == "sale" else SHEET_OTHER].append(build_row(p))
-        pushed = 0
-        for name, rows in buckets.items():
-            if rows:
-                sheets[name].append_rows(rows, value_input_option="USER_ENTERED")
-                pushed += len(rows)
-        return {"ok": True, "pushed": pushed, "skipped": skipped,
-                "total": len(props),
-                "by_sheet": {k: len(v) for k, v in buckets.items()}, "error": ""}
+        pushed = updated = 0
+        detail = {}
+        for name in (SHEET_SALE, SHEET_RENT, SHEET_OTHER):
+            ws = _worksheet(client, sid, name, HEADERS)
+            values = ws.get_all_values()
+            try:
+                url_idx = values[0].index("URL")
+            except (IndexError, ValueError):
+                url_idx = HEADERS.index("URL")
+            seen = {}
+            for i, r in enumerate(values[1:]):
+                if len(r) > url_idx and r[url_idx]:
+                    seen[r[url_idx]] = i + 2
+            ap, up = _row_updates(ws, seen, buckets, name)
+            pushed += ap
+            updated += up
+            detail[name] = {"new": ap, "updated": up}
+        return {"ok": True, "pushed": pushed, "updated": updated,
+                "skipped": len(props) - pushed,
+                "total": len(props), "by_sheet": detail, "error": ""}
     except Exception as e:
         return {"ok": False, "error": f"فشلت المزامنة: {e}"}
 

@@ -178,7 +178,10 @@ with tab2:
                 except Exception as e:
                     res = {"ok": False, "error": str(e)}
             if res.get("ok"):
-                st.success(f"تم: {res['pushed']} جديد ({res.get('by_sheet', {})})، {res['skipped']} موجود قبل كده.")
+                det = res.get("by_sheet", {})
+                summ = "، ".join(f"{k}: +{v.get('new', 0)} جديد/{v.get('updated', 0)} محدث"
+                                 for k, v in det.items())
+                st.success(f"تمت المراية الكاملة: {res['pushed']} جديد، {res['updated']} محدث ({summ}).")
             else:
                 st.error(res.get("error", "فشلت المزامنة"))
 
@@ -781,9 +784,7 @@ with tab6:
                             } for h in ur["hits"]]), use_container_width=True)
 
 with tab7:
-    st.subheader("واتساب سندر (من رقمك الشخصي)")
-    st.caption("إرسال عبر WhatsApp Web بجلسة موبايلك — نفس فكرة جلسة فيسبوك.")
-    st.warning("تنبيه: الإرسال الآلي مخالف لشروط واتساب وقد يعرض الرقم للحظر. أرسل لقوايم موافقة وبفواصل زمنية.")
+    st.subheader("واتساب سندر")
 
     from core.wa_sender import (
         build_send_url,
@@ -793,14 +794,31 @@ with tab7:
         render_listing as wa_render_listing,
         save_subscribers as wa_save_subs,
         send_messages as wa_send,
+        verify_session as wa_verify,
         wa_session_available,
     )
 
+    if "wa_verified" not in st.session_state:
+        st.session_state["wa_verified"] = None
     if wa_session_available():
-        st.success("جلسة واتساب موجودة.")
+        st.caption("بروفايل الجلسة موجود على الجهاز.")
     else:
-        st.warning("مفيش جلسة واتساب. من التيرمينال مرة واحدة:")
+        st.warning("مفيش بروفايل جلسة. من التيرمينال مرة واحدة:")
         st.code("cd ~/Desktop/Raven-Eye && ./venv/bin/python wa_login.py")
+    if st.button("تحقق من الجلسة فعليا"):
+        with st.spinner("بنفتح واتساب ويب ونتأكد... (~30 ثانية)"):
+            import concurrent.futures
+            from datetime import datetime
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                vr = ex.submit(wa_verify).result(timeout=120)
+            vr["at"] = datetime.now().strftime("%H:%M:%S")
+            st.session_state["wa_verified"] = vr
+    vr = st.session_state.get("wa_verified")
+    if vr is not None:
+        if vr.get("ok"):
+            st.success(f"الجلسة شغالة فعلا (اتفحصت {vr.get('at', '')}).")
+        else:
+            st.error(f"الجلسة مش شغالة: {vr.get('reason', '')} (اتفحصت {vr.get('at', '')}).")
 
     subs = wa_load_subs()
     st.caption(f"المشتركين المحفوظين: {len(subs)}")
@@ -841,7 +859,10 @@ with tab7:
         targets = list(subs) if use_subs else []
         targets += wa_parse_targets(extra_numbers or "")
         targets += sheet_numbers
-        targets = sorted(set(targets))[:30]
+        targets = sorted(set(targets))
+        if len(targets) > 500:
+            st.warning(f"عندك {len(targets)} رقم — هيتم إرسال أول 500 فقط للحماية من الحظر. قسّم القايمة لو عايز أكتر.")
+            targets = targets[:500]
         if not targets:
             st.error("مفيش أرقام صالحة.")
         elif not wa_text.strip() and not wa_image:
@@ -853,14 +874,85 @@ with tab7:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
                     tmp.write(wa_image.read())
                     img_path = tmp.name
-            with st.spinner(f"جاري الإرسال لـ {len(targets)} رقم... (متقفلش التاب)"):
+            # Live progress instead of a frozen spinner: updates per number.
+            # Streamlit runs in one thread, so a threading callback is needed
+            # to push progress while the browser loop blocks.
+            import threading
+            prog_bar = st.progress(0, text="جاري الإرسال 0/{}...".format(len(targets)))
+            prog_text = st.empty()
+            live_rows: list = []
+            live_box = st.empty()
+            # Inline WhatsApp preview inside the tab (polls /tmp/wa_live.png).
+            wa_preview = st.empty()
+            try:
+                wa_preview.image("/tmp/wa_live.png", caption="معاينة واتساب المباشرة (آخر لقطة)")
+            except Exception:
+                pass
+            _lock = threading.Lock()
+
+            def _on_progress(done, total, last):
+                # Callback runs in worker thread: only append, UI updates in main thread.
+                with _lock:
+                    live_rows.append(last)
+
+            holder = {"res": None, "err": None}
+            def _worker():
                 try:
-                    res = wa_send(targets, wa_text.strip(), img_path,
-                                  delay=(max(5, wa_delay - 3), wa_delay + 3),
-                                  dry_run=wa_dry)
+                    holder["res"] = wa_send(targets, wa_text.strip(), img_path,
+                                            delay=(max(5, wa_delay - 3), wa_delay + 3),
+                                            dry_run=wa_dry, on_progress=_on_progress)
                 except Exception as e:
-                    st.error(f"فشل الإرسال: {e}")
-                    res = None
+                    holder["err"] = str(e)
+
+            th = threading.Thread(target=_worker, daemon=True)
+            th.start()
+            import time as _time
+            last_seen = 0
+            while th.is_alive():
+                with _lock:
+                    done = len(live_rows)
+                    snapshot = list(live_rows)
+                if done != last_seen:
+                    last_seen = done
+                    pct = done / max(1, len(targets))
+                    try:
+                        prog_bar.progress(pct, text=f"{done}/{len(targets)}")
+                        if snapshot:
+                            last = snapshot[-1]
+                            prog_text.text(f"آخر نتيجة {done}/{len(targets)}: {last.get('target','')} = {'تم' if last.get('ok') else last.get('error','فشل')}")
+                            live_box.dataframe(pd.DataFrame([{
+                                "الرقم": r.get("target",""), "الحالة": "تم" if r.get("ok") else "فشل",
+                                "ملاحظة": r.get("error","")
+                            } for r in snapshot]), use_container_width=True)
+                    except Exception:
+                        pass
+                # Refresh the live screenshot.
+                try:
+                    if __import__("os").path.exists("/tmp/wa_live.png"):
+                        wa_preview.image("/tmp/wa_live.png", caption=f"معاينة واتساب — {done}/{len(targets)}")
+                except Exception:
+                    pass
+                _time.sleep(0.5)
+            th.join()
+            # Final flush
+            with _lock:
+                snapshot = list(live_rows)
+            if snapshot:
+                try:
+                    prog_bar.progress(1.0, text=f"{len(snapshot)}/{len(targets)} — اكتمل")
+                    live_box.dataframe(pd.DataFrame([{
+                        "الرقم": r.get("target",""), "الحالة": "تم" if r.get("ok") else "فشل",
+                        "ملاحظة": r.get("error","")
+                    } for r in snapshot]), use_container_width=True)
+                    if __import__("os").path.exists("/tmp/wa_live.png"):
+                        wa_preview.image("/tmp/wa_live.png", caption="معاينة واتساب — اكتمل")
+                except Exception:
+                    pass
+            if holder["err"]:
+                st.error(f"فشل الإرسال: {holder['err']}")
+                res = None
+            else:
+                res = holder["res"]
             if res:
                 if res.get("error"):
                     st.error(res["error"])
@@ -881,3 +973,26 @@ with tab7:
                             st.caption("اتسجل في ورقة WA Log.")
                         except Exception:
                             pass
+                    try:
+                        db.log_wa_batch(res["results"], wa_text.strip(),
+                                        "dry-run" if res["dry_run"] else "live")
+                    except Exception:
+                        pass
+
+    st.divider()
+    st.subheader("سجل الإرسال (محلي)")
+    try:
+        wa_history = db.get_wa_log(limit=100)
+    except Exception:
+        wa_history = []
+    if wa_history:
+        st.dataframe(pd.DataFrame([{
+            "التاريخ": h.get("Date", ""),
+            "الرقم": h.get("Target", ""),
+            "الحالة": "تم" if h.get("Status") == "sent" else "فشل",
+            "الوضع": h.get("Mode", ""),
+            "الرسالة": (h.get("Message", "") or "")[:120],
+            "ملاحظة": h.get("Note", ""),
+        } for h in wa_history]), use_container_width=True)
+    else:
+        st.info("لا يوجد إرسال مسجل بعد.")

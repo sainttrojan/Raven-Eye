@@ -20,6 +20,7 @@ class FakeWS:
     def __init__(self, values):
         self.values = values
         self.appended = []
+        self.updated = []
 
     def get_all_values(self):
         return self.values
@@ -27,6 +28,15 @@ class FakeWS:
     def append_rows(self, rows, value_input_option=None):
         self.appended.extend(rows)
         self.values.extend([list(map(str, r)) for r in rows])
+
+    def update(self, cell_range, values, value_input_option=None):
+        import re
+        m = re.search(r"A(\d+):", cell_range)
+        idx = int(m.group(1)) - 1 if m else len(self.values)
+        self.updated.append((cell_range, values))
+        while len(self.values) <= idx:
+            self.values.append([])
+        self.values[idx] = list(map(str, values[0]))
 
 
 class FakeDB:
@@ -91,6 +101,48 @@ class SheetDB:
         return ws
 
 
+def test_full_mirror():
+    # Whole table mirrored: new appended, changed updated, rerun is no-op.
+    import core.sheets_sync as mod
+    from core.sheets_sync import HEADERS as H
+    orig_client = mod._client
+    store = {}
+
+    def fake_ws(client, sid, name="Sale", headers=None):
+        if name not in store:
+            store[name] = FakeWS([headers or H])
+        return store[name]
+
+    mod._client = lambda creds: object()
+    orig_ws = mod._worksheet
+    mod._worksheet = fake_ws
+    try:
+        db = FakeDB([dict(PROP, URL="http://m/1", Title="شقة للبيع"),
+                     dict(PROP, URL="http://m/2", Title="شقة للإيجار")])
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+            creds = f.name
+        try:
+            from core.sheets_sync import sync_database
+            r = sync_database(db, "sid", creds)
+            assert r["ok"] and r["pushed"] == 2 and r["updated"] == 0, r
+            # rerun: nothing to do
+            r = sync_database(db, "sid", creds)
+            assert r["pushed"] == 0 and r["updated"] == 0, r
+            # price change on one listing -> updated in place, no dup
+            db.props[0]["Price"] = "6 مليون"
+            r = sync_database(db, "sid", creds)
+            assert r["pushed"] == 0 and r["updated"] == 1, r
+            urls = [row[H.index("URL")] for row in store["Sale"].values[1:]]
+            assert urls.count("http://m/1") == 1, urls
+            assert "6 مليون" in store["Sale"].values[1]
+        finally:
+            os.unlink(creds)
+    finally:
+        mod._client, mod._worksheet = orig_client, orig_ws
+    print("full mirror OK")
+
+
 def test_split_and_osint_and_log():
     import core.sheets_sync as mod
     orig_client = mod._client
@@ -129,10 +181,12 @@ def test_split_and_osint_and_log():
         try:
             from core.sheets_sync import sync_osint, log_wa_send
             r = sync_database(FullDB([sale, rent, other]), "sid", creds)
-            assert r["ok"] and r["pushed"] == 3, r
-            assert r["by_sheet"] == {"Sale": 1, "Rent": 1, "Other": 1}, r
+            assert r["ok"] and r["pushed"] == 3 and r["updated"] == 0, r
+            assert r["by_sheet"] == {"Sale": {"new": 1, "updated": 0},
+                                     "Rent": {"new": 1, "updated": 0},
+                                     "Other": {"new": 1, "updated": 0}}, r
             r = sync_database(FullDB([sale]), "sid", creds)
-            assert r["pushed"] == 0 and r["skipped"] == 1, r
+            assert r["pushed"] == 0 and r["updated"] == 0 and r["skipped"] == 1, r
             o = sync_osint(FullDB([]), "sid", creds)
             assert o["ok"] and o["pushed"] == 2, o
             o = sync_osint(FullDB([]), "sid", creds)
@@ -154,4 +208,5 @@ if __name__ == "__main__":
     test_sync_guards()
     test_lead_type()
     test_split_and_osint_and_log()
+    test_full_mirror()
     print("ALL SHEETS TESTS PASSED")
