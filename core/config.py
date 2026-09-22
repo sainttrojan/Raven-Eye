@@ -131,6 +131,28 @@ def save_google_creds(path: str):
     with open(CONFIG_FILE, 'w') as f:
         json.dump(data, f)
 
+def load_admin_hash() -> str:
+    """SHA256 of the admin password (empty = open access, no lock)."""
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                h = json.load(f).get("admin_hash", "")
+                if h:
+                    return h
+        except: pass
+    return os.getenv("RAVEN_ADMIN_HASH", "")
+
+def save_admin_hash(hex_digest: str):
+    data = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r') as f:
+                data = json.load(f)
+        except: pass
+    data["admin_hash"] = hex_digest.strip()
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump(data, f)
+
 # ---------- Facebook Marketplace session ----------
 # One-time manual login via `venv/bin/python fb_login.py` saves the
 # authenticated storage state here; scrapers reuse it afterwards.
