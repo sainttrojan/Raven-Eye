@@ -476,7 +476,8 @@ with tab2:
         st.info("لا توجد عقارات محفوظة حتى الآن.")
 
 with tab1:
-    query = st.text_input("", placeholder="أدخل كلمات البحث...")
+    query = st.text_input("كلمات البحث", placeholder="أدخل كلمات البحث...",
+                          label_visibility="collapsed")
 
     col1, col2, col3, col4 = st.columns([1.5, 1.5, 1.5, 1])
 
@@ -484,16 +485,19 @@ with tab1:
         time_option = st.selectbox("تاريخ النشر", ["أي وقت", "آخر 24 ساعة", "آخر أسبوع", "آخر شهر"])
 
     with col2:
-        site_option = st.selectbox("الموقع", [
-            "جميع المواقع", 
-            "PropertyFinder فقط", 
-            "Dubizzle فقط", 
-            "Aqarmap فقط",
-            "Facebook فقط",
-            "جروبات فيسبوك",
-            "Instagram فقط",
-            "Twitter فقط"
-        ])
+        st.write("")
+        st.write("")
+        st.caption("اختار المصادر من تحت")
+
+    st.markdown("##### المصادر (علم صح على اللي عايزه — ممكن أكتر من واحد)")
+    sel_sources = st.multiselect(
+        "المصادر",
+        ["Dubizzle", "فيسبوك ماركتبليس", "جروبات فيسبوك",
+         "PropertyFinder", "Aqarmap", "Instagram", "Twitter"],
+        default=["Dubizzle", "فيسبوك ماركتبليس", "جروبات فيسبوك"],
+        label_visibility="collapsed",
+    )
+    st.caption("عدد الصفحات بيتطبق على كل مصدر — اختار مصادر أقل لو عايز توفر الرصيد.")
 
     with col3:
         st.write("")
@@ -514,7 +518,9 @@ with tab1:
     fb_details = False
     fb_detail_limit = 10
     fb_groups: list = []
-    if site_option == "Facebook فقط":
+    want_fb = "فيسبوك ماركتبليس" in sel_sources
+    want_groups = "جروبات فيسبوك" in sel_sources
+    if want_fb:
         from core.config import fb_session_available
         if fb_session_available():
             st.success("جلسة فيسبوك موجودة — السحب هيكون مباشر من الماركتبليس.")
@@ -524,7 +530,7 @@ with tab1:
         if fb_details:
             fb_detail_limit = st.number_input("عدد الإعلانات للتفصيل", min_value=1, max_value=30, value=10)
 
-    if site_option == "جروبات فيسبوك":
+    if want_groups:
         from core.config import fb_session_available, load_fb_groups
         fb_groups = load_fb_groups()
         if fb_session_available() and fb_groups:
@@ -539,23 +545,20 @@ with tab1:
     search_clicked = st.button("بحث", use_container_width=True)
 
     if search_clicked and query:
-        final_query = query
-        if exact_match:
-            final_query = f'"{query}"'
-            
-        if site_option == "PropertyFinder فقط":
-            final_query += " site:propertyfinder.eg"
-        elif site_option == "Dubizzle فقط":
-            final_query += " site:dubizzle.com.eg"
-        elif site_option == "Aqarmap فقط":
-            final_query += " site:aqarmap.com.eg"
-        elif site_option == "Facebook فقط":
-            final_query += " site:facebook.com"
-        elif site_option == "Instagram فقط":
-            final_query += " site:instagram.com"
-        elif site_option == "Twitter فقط":
-            final_query += " (site:twitter.com OR site:x.com)"
-            
+        if not sel_sources:
+            st.error("اختار مصدر واحد على الأقل من المصادر.")
+            st.stop()
+        base_query = f'"{query}"' if exact_match else query
+
+        SITE_FILTERS = {
+            "PropertyFinder": "site:propertyfinder.eg",
+            "Aqarmap": "site:aqarmap.com.eg",
+            "Instagram": "site:instagram.com",
+            "Twitter": "(site:twitter.com OR site:x.com)",
+        }
+        g_parts = [SITE_FILTERS[s] for s in sel_sources if s in SITE_FILTERS]
+        want_dubizzle = "Dubizzle" in sel_sources
+
         time_filter = ""
         if time_option == "آخر 24 ساعة":
             time_filter = "qdr:d"
@@ -568,46 +571,56 @@ with tab1:
         # cannot access st.session_state.
         api_keys = list(st.session_state.get("api_keys") or [])
 
-        async def fetch_results(keys):
-            if site_option == "Dubizzle فقط":
+        async def fetch_results(keys, g_query):
+            out = []
+            if want_dubizzle:
                 scraper = DubizzleScraper(keys)
-                return await scraper.search(query, time_filter, max_pages=max_pages)
-            else:
+                out += await scraper.search(query, time_filter, max_pages=max_pages)
+            if g_query:
                 scraper = GoogleScraper(keys)
-                return await scraper.search(final_query, time_filter, max_pages=max_pages)
+                out += await scraper.search(g_query, time_filter, max_pages=max_pages)
+            return out
 
         def run_in_thread():
-            """Run async fetch in a clean thread to avoid Streamlit event loop conflicts."""
+            """Run every selected source and merge results."""
             import concurrent.futures
+            merged = []
+            g_query = None
+            if g_parts:
+                g_query = base_query + " (" + " OR ".join(g_parts) + ")"
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                if site_option == "Facebook فقط":
+                if want_fb:
                     from core.config import fb_session_available
                     from core.fb_session import FacebookNotLoggedIn, run_facebook_search
                     if fb_session_available():
                         try:
-                            future = ex.submit(run_facebook_search, query, max_pages,
-                                               fb_details, fb_detail_limit)
-                            return future.result(timeout=600)
+                            merged += ex.submit(run_facebook_search, query, max_pages,
+                                                fb_details, fb_detail_limit).result(timeout=600)
                         except FacebookNotLoggedIn as e:
                             st.warning(f"{e} — هنكمل عبر بحث جوجل كبديل.")
+                            g_query = (g_query + " OR site:facebook.com") if g_query else (base_query + " site:facebook.com")
                         except Exception as e:
                             st.warning(f"سحب فيسبوك المباشر فشل ({e}) — هنكمل عبر بحث جوجل كبديل.")
+                            g_query = (g_query + " OR site:facebook.com") if g_query else (base_query + " site:facebook.com")
                     else:
                         st.info("هنبحث عبر جوجل: site:facebook.com (الجلسة المباشرة مش متفعلة).")
-                if site_option == "جروبات فيسبوك":
+                        g_query = (g_query + " OR site:facebook.com") if g_query else (base_query + " site:facebook.com")
+                if want_groups:
                     from core.fb_session import FacebookNotLoggedIn, run_facebook_groups_search
                     try:
-                        future = ex.submit(run_facebook_groups_search, query, fb_groups,
-                                           min(int(max_pages), 5))
-                        return future.result(timeout=900)
+                        merged += ex.submit(run_facebook_groups_search, query, fb_groups,
+                                            min(int(max_pages), 5)).result(timeout=900)
                     except FacebookNotLoggedIn as e:
                         st.error(str(e))
-                        return []
                     except Exception as e:
                         st.error(f"سحب الجروبات فشل: {e}")
-                        return []
-                future = ex.submit(asyncio.run, fetch_results(api_keys))
-                return future.result(timeout=300)
+                if want_dubizzle or g_query:
+                    try:
+                        merged += ex.submit(asyncio.run,
+                                            fetch_results(api_keys, g_query)).result(timeout=600)
+                    except Exception as e:
+                        st.error(f"سحب Dubizzle/جوجل فشل: {e}")
+                return merged
 
         with st.spinner(f"جاري سحب البيانات من {max_pages} صفحات... برجاء الانتظار"):
             try:

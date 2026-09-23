@@ -1,0 +1,36 @@
+# Raven-Eye — run everything with:  docker compose up -d --build
+# Dashboard: http://localhost:8501
+services:
+  raven-eye:
+    build: .
+    container_name: raven-eye
+    ports:
+      - "8501:8501"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: 8501
+      # Fill these (or put them in a .env file next to this compose file):
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      ADMIN_CHAT_ID: ${ADMIN_CHAT_ID:-}
+      DATABASE_URL: ${DATABASE_URL:-}
+      ZENROWS_API_KEY: ${ZENROWS_API_KEY:-}
+      SCRAPER_API_KEYS: ${SCRAPER_API_KEYS:-}
+      SHEET_ID: ${SHEET_ID:-}
+      RAVEN_ADMIN_HASH: ${RAVEN_ADMIN_HASH:-}
+    volumes:
+      # Persistent data lives on the host under ./data (survives rebuilds).
+      - ./data/raven_eye.db:/app/raven_eye.db
+      - ./data/config.json:/app/config.json
+      - ./data/wa_profile:/app/wa_profile
+      - ./data/fb_storage_state.json:/app/fb_storage_state.json
+      - ./data/fb_cookies.json:/app/fb_cookies.json
+      - ./data/wa_storage_state.json:/app/wa_storage_state.json
+      - ./data/wa_subscribers.json:/app/wa_subscribers.json
+      - ./data/seen_properties.json:/app/seen_properties.json
+      - ./data/subscribers.json:/app/subscribers.json
+    restart: unless-stopped

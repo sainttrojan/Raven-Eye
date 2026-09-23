@@ -11,11 +11,14 @@ wa_subscribers.json
 *service-account*.json
 google-creds.json
 *-credentials.json
+raven.key
 seen_properties.json
 subscribers.json
 *.xlsx
 *.csv
 config.json
 *.db
+*.bak
+*.bak-*
 dubizzle_test.html
 test_dubizzle.html
